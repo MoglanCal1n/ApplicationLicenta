@@ -1,0 +1,47 @@
+# ==========================================
+# Root .gitignore for Clinic Management App
+# ==========================================
+
+# --- System & IDEs ---
+.DS_Store
+Thumbs.db
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.tmp
+
+# --- Frontend (Vite/React/TS) ---
+Frontend/node_modules/
+Frontend/dist/
+Frontend/dist-ssr/
+Frontend/.env
+Frontend/*.local
+
+# --- Backend (Python/FastAPI) ---
+Backend/venv/
+Backend/env/
+Backend/ENV/
+Backend/.env
+Backend/__pycache__/
+Backend/**/*.py[cod]
+Backend/**/*.pyo
+Backend/.pytest_cache/
+Backend/uploads/
+Backend/HybridSystem/
+
+# Database files
+Backend/*.db
+Backend/*.sqlite3
+
+# Logs
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+lerna-debug.log*

@@ -1,0 +1,34 @@
+# ==========================================
+# Backend .gitignore
+# ==========================================
+
+# Virtual Environments
+venv/
+env/
+ENV/
+.venv/
+env.bak/
+venv.bak/
+
+# Environment secrets
+.env
+
+# Python Caches & Compiled files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Large folders (Machine Learning models & uploads)
+HybridSystem/
+uploads/
+
+# Databases
+*.db
+*.sqlite3
+
+# Logs
+*.log
