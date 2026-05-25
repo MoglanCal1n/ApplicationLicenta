@@ -6,21 +6,7 @@ import {
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import api from '../api';
-
-/* ── Toast ─────────────────────────────────────────────────────────── */
-interface ToastProps { message: string; type: 'success' | 'error'; onClose: () => void; }
-function Toast({ message, type, onClose }: ToastProps) {
-  useEffect(() => { const t = setTimeout(onClose, 5000); return () => clearTimeout(t); }, [onClose]);
-  return (
-    <div className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-5 py-4 border-l-4 rounded-xl shadow-xl text-sm font-medium max-w-sm ${
-      type === 'success' ? 'bg-emerald-50 border-emerald-500 text-emerald-800' : 'bg-red-50 border-red-500 text-red-800'
-    }`}>
-      {type === 'success' ? <CheckCircle className="h-5 w-5 flex-shrink-0" /> : <XCircle className="h-5 w-5 flex-shrink-0" />}
-      <span className="flex-1">{message}</span>
-      <button onClick={onClose} className="opacity-60 hover:opacity-100 ml-2 text-lg">&times;</button>
-    </div>
-  );
-}
+import { useToast, StatusBadge, SectionCard, Spinner } from '../components/ui';
 
 /* ── Structured fields section inside the edit modal ─────────────── */
 interface StructuredFieldsProps {
@@ -46,11 +32,12 @@ function StructuredFields({
   ];
 
   return (
-    <div className="border-t bg-blue-50/40">
+    <div style={{ borderTop: '1px solid var(--color-border)', backgroundColor: 'var(--color-info-light)' }}>
       <button
         type="button"
         onClick={() => setOpen(p => !p)}
-        className="w-full flex items-center justify-between px-6 py-3 text-sm font-semibold text-blue-800 hover:bg-blue-100/50 transition-colors"
+        className="w-full flex items-center justify-between px-6 py-3 text-sm font-semibold transition-colors"
+        style={{ color: 'var(--color-text-primary)' }}
       >
         <span>{t('consultation.structured_toggle')}</span>
         {open ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
@@ -59,12 +46,19 @@ function StructuredFields({
         <div className="px-6 pb-5 space-y-4">
           {fields.map(({ label, value, set }) => (
             <div key={label}>
-              <label className="block text-xs font-semibold mb-1 text-slate-600 uppercase tracking-wide">{label}</label>
+              <label className="block text-xs font-semibold mb-1 uppercase tracking-wide" style={{ color: 'var(--color-text-tertiary)' }}>{label}</label>
               <textarea
                 rows={2}
                 value={value}
                 onChange={e => set(e.target.value)}
-                className="w-full bg-white border-2 border-slate-200 focus:border-primary rounded-lg px-3 py-2 text-sm outline-none transition-colors resize-none"
+                className="w-full rounded-lg px-3 py-2 text-sm outline-none transition-all resize-none"
+                style={{
+                  backgroundColor: 'var(--color-surface)',
+                  border: '2px solid var(--color-border)',
+                  color: 'var(--color-text-primary)',
+                }}
+                onFocus={(e) => e.target.style.borderColor = 'var(--color-primary)'}
+                onBlur={(e) => e.target.style.borderColor = 'var(--color-border)'}
               />
             </div>
           ))}
@@ -84,9 +78,8 @@ function EditModal({ consultation, onClose, onSaved }: EditModalProps) {
   const { t } = useTranslation();
   const editorRef = useRef<HTMLDivElement>(null);
   const [saving, setSaving] = useState(false);
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const { show: showToast, ToastNode } = useToast();
 
-  // Structured fields — pre-populate from metadata if available
   const savedFields = consultation.mixed_score_metadata?.structured_fields || {};
   const [symptoms,        setSymptoms]        = useState(savedFields.symptoms        || '');
   const [diagnosis,       setDiagnosis]       = useState(savedFields.diagnosis       || '');
@@ -109,12 +102,9 @@ function EditModal({ consultation, onClose, onSaved }: EditModalProps) {
     try {
       const res = await api.put(`/consultations/${consultation.id}/update`, {
         final_revised_text: editorRef.current.innerText,
-        symptoms,
-        diagnosis,
-        recommendations,
-        prescriptions,
+        symptoms, diagnosis, recommendations, prescriptions,
       });
-      setToast({ message: t('consultation.save_success'), type: 'success' });
+      showToast(t('consultation.save_success'), 'success');
       setTimeout(() => {
         onSaved({
           ...consultation,
@@ -125,32 +115,39 @@ function EditModal({ consultation, onClose, onSaved }: EditModalProps) {
         onClose();
       }, 1200);
     } catch (err: any) {
-      setToast({ message: err.response?.data?.detail || t('consultation.save_error'), type: 'error' });
+      showToast(err.response?.data?.detail || t('consultation.save_error'), 'error');
     } finally {
       setSaving(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 z-40 bg-black/50 flex items-center justify-center p-4">
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
-      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-3xl max-h-[92vh] flex flex-col">
+    <div className="fixed inset-0 z-40 flex items-center justify-center p-4" style={{ backgroundColor: 'rgba(0,0,0,0.5)' }}>
+      {ToastNode}
+      <div
+        className="rounded-2xl w-full max-w-3xl max-h-[92vh] flex flex-col animate-fade-in-up"
+        style={{
+          backgroundColor: 'var(--color-surface)',
+          border: '1px solid var(--color-border)',
+          boxShadow: '0 25px 50px rgba(0,0,0,0.25)',
+        }}
+      >
         {/* Modal header */}
-        <div className="px-6 py-4 border-b flex items-center justify-between bg-slate-50 rounded-t-2xl">
+        <div className="px-6 py-4 flex items-center justify-between rounded-t-2xl" style={{ borderBottom: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface-elevated)' }}>
           <div>
-            <h2 className="font-bold text-lg flex items-center gap-2">
-              <Edit3 className="h-5 w-5 text-primary" />
+            <h2 className="font-bold text-lg flex items-center gap-2" style={{ color: 'var(--color-text-primary)' }}>
+              <Edit3 className="h-5 w-5" style={{ color: 'var(--color-primary)' }} />
               {t('consultation.edit_modal_title', { id: consultation.id })}
             </h2>
-            <p className="text-xs text-muted-foreground mt-0.5">
+            <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-tertiary)' }}>
               {t('consultation.edit_modal_subtitle', {
                 email: consultation.patient_email,
                 date: new Date(consultation.created_at).toLocaleDateString(),
               })}
             </p>
           </div>
-          <button onClick={onClose} className="p-2 hover:bg-muted rounded-full transition-colors">
-            <XCircle className="h-5 w-5 text-muted-foreground" />
+          <button onClick={onClose} className="p-2 rounded-full transition-colors" style={{ color: 'var(--color-text-tertiary)' }}>
+            <XCircle className="h-5 w-5" />
           </button>
         </div>
 
@@ -160,10 +157,9 @@ function EditModal({ consultation, onClose, onSaved }: EditModalProps) {
           className="flex-1 p-6 overflow-y-auto focus:outline-none min-h-[200px] max-h-[280px]"
           contentEditable
           suppressContentEditableWarning
-          style={{ fontSize: '1rem', lineHeight: '1.75' }}
+          style={{ fontSize: '1rem', lineHeight: '1.75', color: 'var(--color-text-primary)' }}
         />
 
-        {/* Structured fields */}
         <StructuredFields
           symptoms={symptoms}               setSymptoms={setSymptoms}
           diagnosis={diagnosis}             setDiagnosis={setDiagnosis}
@@ -172,16 +168,21 @@ function EditModal({ consultation, onClose, onSaved }: EditModalProps) {
         />
 
         {/* Footer */}
-        <div className="px-6 py-4 border-t bg-slate-50 rounded-b-2xl flex justify-between items-center gap-4">
-          <p className="text-xs text-muted-foreground">{t('consultation.edit_hint')}</p>
+        <div className="px-6 py-4 rounded-b-2xl flex justify-between items-center gap-4" style={{ borderTop: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface-elevated)' }}>
+          <p className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>{t('consultation.edit_hint')}</p>
           <div className="flex gap-3">
-            <button onClick={onClose} className="px-4 py-2 border rounded-lg text-sm font-medium hover:bg-muted transition-colors">
+            <button
+              onClick={onClose}
+              className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
+              style={{ border: '1px solid var(--color-border)', color: 'var(--color-text-secondary)' }}
+            >
               {t('common.cancel')}
             </button>
             <button
               onClick={handleSave}
               disabled={saving}
-              className="flex items-center gap-2 px-5 py-2 bg-primary text-primary-foreground rounded-lg text-sm font-semibold hover:bg-primary/90 transition-colors disabled:opacity-50"
+              className="flex items-center gap-2 px-5 py-2 rounded-lg text-sm font-semibold transition-colors disabled:opacity-50"
+              style={{ backgroundColor: 'var(--color-primary)', color: 'white' }}
             >
               {saving
                 ? <><Loader2 className="h-4 w-4 animate-spin" /> {t('consultation.saving')}</>
@@ -195,17 +196,6 @@ function EditModal({ consultation, onClose, onSaved }: EditModalProps) {
   );
 }
 
-/* ── Status Badge ───────────────────────────────────────────────── */
-function StatusBadge({ status }: { status: string }) {
-  const { t } = useTranslation();
-  const map: Record<string, { label: string; cls: string }> = {
-    DRAFT:  { label: t('common.status_draft'),  cls: 'bg-yellow-100 text-yellow-800 border-yellow-200' },
-    SIGNED: { label: t('common.status_signed'), cls: 'bg-emerald-100 text-emerald-800 border-emerald-200' },
-  };
-  const s = map[status] || { label: status, cls: 'bg-gray-100 text-gray-700 border-gray-200' };
-  return <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${s.cls}`}>{s.label}</span>;
-}
-
 /* ── Main Page ──────────────────────────────────────────────────── */
 export default function DoctorConsultations() {
   const navigate = useNavigate();
@@ -213,7 +203,7 @@ export default function DoctorConsultations() {
   const [consultations, setConsultations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [editTarget, setEditTarget] = useState<any>(null);
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const { show: showToast, ToastNode } = useToast();
   const [filter, setFilter] = useState<'ALL' | 'DRAFT' | 'SIGNED'>('ALL');
 
   const fetchConsultations = async () => {
@@ -231,7 +221,7 @@ export default function DoctorConsultations() {
 
   const handleSaved = (updated: any) => {
     setConsultations(prev => prev.map(c => c.id === updated.id ? { ...c, ...updated } : c));
-    setToast({ message: t('consultation.save_success'), type: 'success' });
+    showToast(t('consultation.save_success'), 'success');
   };
 
   const filtered  = filter === 'ALL' ? consultations : consultations.filter(c => c.status === filter);
@@ -239,8 +229,8 @@ export default function DoctorConsultations() {
   const signedCount = consultations.filter(c => c.status === 'SIGNED').length;
 
   return (
-    <div className="min-h-screen bg-muted/10 pb-16">
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+    <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
+      {ToastNode}
       {editTarget && (
         <EditModal
           consultation={editTarget}
@@ -250,124 +240,139 @@ export default function DoctorConsultations() {
       )}
 
       {/* Header */}
-      <header className="bg-white border-b px-6 py-4 flex items-center gap-4 shadow-sm sticky top-0 z-10">
-        <button onClick={() => navigate('/dashboard')} className="p-2 hover:bg-muted rounded-full transition-colors">
-          <ArrowLeft className="h-5 w-5" />
+      <div className="flex items-center gap-4">
+        <button
+          onClick={() => navigate('/ehealth/dashboard')}
+          className="p-2 rounded-xl transition-colors"
+          style={{ backgroundColor: 'var(--color-surface-elevated)' }}
+        >
+          <ArrowLeft className="h-5 w-5" style={{ color: 'var(--color-text-secondary)' }} />
         </button>
-        <h1 className="text-xl font-bold text-primary flex items-center gap-2">
-          <FileText className="h-5 w-5" /> {t('consultation.history_title')}
+        <h1 className="text-2xl font-bold flex items-center gap-2" style={{ color: 'var(--color-text-primary)' }}>
+          <FileText className="h-6 w-6" style={{ color: 'var(--color-primary)' }} /> {t('consultation.history_title')}
         </h1>
-      </header>
+      </div>
 
-      <main className="max-w-4xl mx-auto p-6 mt-6">
-        {/* Summary cards */}
-        <div className="grid grid-cols-3 gap-4 mb-6">
-          <div className="bg-card border rounded-xl p-5 shadow-sm text-center">
-            <p className="text-3xl font-bold">{loading ? '…' : consultations.length}</p>
-            <p className="text-xs text-muted-foreground mt-1 font-medium">{t('consultation.stat_total')}</p>
-          </div>
-          <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-5 shadow-sm text-center">
-            <p className="text-3xl font-bold text-yellow-700">{loading ? '…' : draftCount}</p>
-            <p className="text-xs text-yellow-600 mt-1 font-medium">{t('consultation.stat_draft')}</p>
-          </div>
-          <div className="bg-emerald-50 border border-emerald-200 rounded-xl p-5 shadow-sm text-center">
-            <p className="text-3xl font-bold text-emerald-700">{loading ? '…' : signedCount}</p>
-            <p className="text-xs text-emerald-600 mt-1 font-medium">{t('consultation.stat_signed')}</p>
+      {/* Summary cards */}
+      <div className="grid grid-cols-3 gap-4">
+        <div className="rounded-xl p-5 text-center" style={{ backgroundColor: 'var(--color-surface)', border: '1px solid var(--color-border)', boxShadow: 'var(--shadow-card)' }}>
+          <p className="text-3xl font-bold" style={{ color: 'var(--color-text-primary)' }}>{loading ? '…' : consultations.length}</p>
+          <p className="text-xs mt-1 font-medium" style={{ color: 'var(--color-text-tertiary)' }}>{t('consultation.stat_total')}</p>
+        </div>
+        <div className="rounded-xl p-5 text-center" style={{ backgroundColor: 'var(--color-warning-light)', border: '1px solid var(--color-warning)', boxShadow: 'var(--shadow-card)' }}>
+          <p className="text-3xl font-bold" style={{ color: 'var(--color-warning)' }}>{loading ? '…' : draftCount}</p>
+          <p className="text-xs mt-1 font-medium" style={{ color: 'var(--color-warning)' }}>{t('consultation.stat_draft')}</p>
+        </div>
+        <div className="rounded-xl p-5 text-center" style={{ backgroundColor: 'var(--color-success-light)', border: '1px solid var(--color-success)', boxShadow: 'var(--shadow-card)' }}>
+          <p className="text-3xl font-bold" style={{ color: 'var(--color-success)' }}>{loading ? '…' : signedCount}</p>
+          <p className="text-xs mt-1 font-medium" style={{ color: 'var(--color-success)' }}>{t('consultation.stat_signed')}</p>
+        </div>
+      </div>
+
+      {/* Filter tabs + list */}
+      <SectionCard>
+        <div className="flex items-center justify-between px-5 py-4" style={{ borderBottom: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface-elevated)' }}>
+          <h2 className="font-semibold" style={{ color: 'var(--color-text-primary)' }}>{t('consultation.list_title')}</h2>
+          <div className="flex gap-1 rounded-lg p-1" style={{ backgroundColor: 'var(--color-surface-elevated)' }}>
+            {(['ALL', 'DRAFT', 'SIGNED'] as const).map(f => (
+              <button
+                key={f}
+                onClick={() => setFilter(f)}
+                className="px-3 py-1.5 rounded-md font-medium text-sm transition-all"
+                style={{
+                  backgroundColor: filter === f ? 'var(--color-surface)' : 'transparent',
+                  color: filter === f ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
+                  boxShadow: filter === f ? 'var(--shadow-card)' : 'none',
+                }}
+              >
+                {f === 'ALL' ? t('consultation.tab_all') : f === 'DRAFT' ? t('consultation.tab_draft') : t('consultation.tab_signed')}
+              </button>
+            ))}
           </div>
         </div>
 
-        {/* Filter tabs */}
-        <div className="bg-card border rounded-2xl shadow-sm overflow-hidden">
-          <div className="flex items-center justify-between px-5 py-4 border-b bg-slate-50">
-            <h2 className="font-semibold">{t('consultation.list_title')}</h2>
-            <div className="flex gap-1 bg-muted rounded-lg p-1 text-sm">
-              {(['ALL', 'DRAFT', 'SIGNED'] as const).map(f => (
-                <button
-                  key={f}
-                  onClick={() => setFilter(f)}
-                  className={`px-3 py-1.5 rounded-md font-medium transition-all ${filter === f ? 'bg-white shadow text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-                >
-                  {f === 'ALL' ? t('consultation.tab_all') : f === 'DRAFT' ? t('consultation.tab_draft') : t('consultation.tab_signed')}
-                </button>
-              ))}
-            </div>
+        {loading ? (
+          <div className="p-12 flex justify-center"><Spinner size="lg" /></div>
+        ) : filtered.length === 0 ? (
+          <div className="p-12 text-center" style={{ color: 'var(--color-text-tertiary)' }}>
+            <FileText className="h-10 w-10 mx-auto mb-3 opacity-30" />
+            <p className="font-medium">{t('consultation.no_consultations')}</p>
           </div>
-
-          {loading ? (
-            <div className="p-12 flex justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
-          ) : filtered.length === 0 ? (
-            <div className="p-12 text-center text-muted-foreground">
-              <FileText className="h-10 w-10 mx-auto mb-3 opacity-30" />
-              <p className="font-medium">{t('consultation.no_consultations')}</p>
-            </div>
-          ) : (
-            <div className="divide-y">
-              {filtered.map(c => (
-                <div key={c.id} className="p-5 hover:bg-slate-50 transition-colors">
-                  <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-                    {/* Info */}
-                    <div className="flex items-start gap-4">
-                      <div className={`h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-                        c.status === 'SIGNED' ? 'bg-emerald-100 text-emerald-600' : 'bg-yellow-100 text-yellow-600'
-                      }`}>
-                        {c.status === 'SIGNED' ? <CheckCircle className="h-5 w-5" /> : <Clock className="h-5 w-5" />}
-                      </div>
-                      <div>
-                        <div className="flex items-center gap-2 flex-wrap">
-                          <p className="font-semibold">Consultație #{c.id}</p>
-                          <StatusBadge status={c.status} />
-                        </div>
-                        <p className="text-xs text-muted-foreground mt-0.5 flex items-center gap-1.5">
-                          <User className="h-3.5 w-3.5" />
-                          {c.patient_email} · {t('consultation.cnp_label')}: {c.patient_cnp}
-                        </p>
-                        <p className="text-xs text-muted-foreground">
-                          📅 {new Date(c.created_at).toLocaleDateString(undefined, {
-                            year: 'numeric', month: 'long', day: 'numeric',
-                          })}
-                          {c.signed_at && ` · ✅ ${new Date(c.signed_at).toLocaleDateString()}`}
-                        </p>
-                        {/* ✅ FIX: use JSX interpolation, not string literal */}
-                        {(c.final_revised_text || c.ai_draft_transcript) && (
-                          <p className="text-xs text-muted-foreground mt-1.5 italic max-w-lg line-clamp-2">
-                            &ldquo;{c.final_revised_text || c.ai_draft_transcript}&rdquo;
-                          </p>
-                        )}
-                        {/* Show structured fields if present */}
-                        {c.mixed_score_metadata?.structured_fields?.diagnosis && (
-                          <p className="text-xs text-emerald-700 mt-1 font-medium">
-                            Dx: {c.mixed_score_metadata.structured_fields.diagnosis}
-                          </p>
-                        )}
-                      </div>
+        ) : (
+          <div>
+            {filtered.map(c => (
+              <div
+                key={c.id}
+                className="p-5 transition-colors"
+                style={{ borderBottom: '1px solid var(--color-border)' }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-surface-elevated)'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+              >
+                <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                  <div className="flex items-start gap-4">
+                    <div
+                      className="h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0"
+                      style={{
+                        backgroundColor: c.status === 'SIGNED' ? 'var(--color-success-light)' : 'var(--color-warning-light)',
+                        color: c.status === 'SIGNED' ? 'var(--color-success)' : 'var(--color-warning)',
+                      }}
+                    >
+                      {c.status === 'SIGNED' ? <CheckCircle className="h-5 w-5" /> : <Clock className="h-5 w-5" />}
                     </div>
-
-                    {/* Actions */}
-                    <div className="flex items-center gap-2 flex-shrink-0">
-                      <button
-                        onClick={() => setEditTarget(c)}
-                        className="flex items-center gap-1.5 px-3 py-2 border-2 border-primary text-primary rounded-lg text-xs font-semibold hover:bg-primary hover:text-white transition-all"
-                      >
-                        <Edit3 className="h-3.5 w-3.5" />
-                        {t('consultation.edit_btn')}
-                      </button>
-                      {c.pdf_report_url && (
-                        <button
-                          onClick={() => window.open(`http://localhost:8000${c.pdf_report_url}`, '_blank')}
-                          className="flex items-center gap-1.5 px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-semibold transition-colors"
-                        >
-                          <Download className="h-3.5 w-3.5" />
-                          PDF
-                        </button>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="font-semibold" style={{ color: 'var(--color-text-primary)' }}>Consultație #{c.id}</p>
+                        <StatusBadge status={c.status} />
+                      </div>
+                      <p className="text-xs mt-0.5 flex items-center gap-1.5" style={{ color: 'var(--color-text-tertiary)' }}>
+                        <User className="h-3.5 w-3.5" />
+                        {c.patient_email} · {t('consultation.cnp_label')}: {c.patient_cnp}
+                      </p>
+                      <p className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
+                        📅 {new Date(c.created_at).toLocaleDateString(undefined, { year: 'numeric', month: 'long', day: 'numeric' })}
+                        {c.signed_at && ` · ✅ ${new Date(c.signed_at).toLocaleDateString()}`}
+                      </p>
+                      {(c.final_revised_text || c.ai_draft_transcript) && (
+                        <p className="text-xs mt-1.5 italic max-w-lg line-clamp-2" style={{ color: 'var(--color-text-tertiary)' }}>
+                          &ldquo;{c.final_revised_text || c.ai_draft_transcript}&rdquo;
+                        </p>
+                      )}
+                      {c.mixed_score_metadata?.structured_fields?.diagnosis && (
+                        <p className="text-xs mt-1 font-medium" style={{ color: 'var(--color-success)' }}>
+                          Dx: {c.mixed_score_metadata.structured_fields.diagnosis}
+                        </p>
                       )}
                     </div>
                   </div>
+
+                  <div className="flex items-center gap-2 flex-shrink-0">
+                    <button
+                      onClick={() => setEditTarget(c)}
+                      className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-all"
+                      style={{ border: '2px solid var(--color-primary)', color: 'var(--color-primary)' }}
+                      onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-primary)'; e.currentTarget.style.color = 'white'; }}
+                      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--color-primary)'; }}
+                    >
+                      <Edit3 className="h-3.5 w-3.5" />
+                      {t('consultation.edit_btn')}
+                    </button>
+                    {c.pdf_report_url && (
+                      <button
+                        onClick={() => window.open(`http://localhost:8000${c.pdf_report_url}`, '_blank')}
+                        className="flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold transition-colors"
+                        style={{ backgroundColor: 'var(--color-surface-elevated)', color: 'var(--color-text-secondary)' }}
+                      >
+                        <Download className="h-3.5 w-3.5" />
+                        PDF
+                      </button>
+                    )}
+                  </div>
                 </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </main>
+              </div>
+            ))}
+          </div>
+        )}
+      </SectionCard>
     </div>
   );
 }

@@ -1,25 +1,9 @@
-import React, { useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { FileText, CalendarClock, Loader2, Download, CheckCircle, Clock, CalendarDays, Stethoscope } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import api from '../api';
-
-function StatusBadge({ status }: { status: string }) {
-  const { t } = useTranslation();
-  const styles: Record<string, string> = {
-    DRAFT:  'bg-yellow-100 text-yellow-800 border-yellow-200',
-    SIGNED: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-  };
-  const labels: Record<string, string> = {
-    DRAFT: t('common.status_draft'),
-    SIGNED: t('common.status_signed'),
-  };
-  return (
-    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${styles[status] || 'bg-gray-100 text-gray-700'}`}>
-      {labels[status] || status}
-    </span>
-  );
-}
+import { StatusBadge, StatCard, SectionCard, Spinner } from '../components/ui';
 
 export default function PatientDashboard() {
   const navigate = useNavigate();
@@ -38,9 +22,7 @@ export default function PatientDashboard() {
           api.get('/appointments/me'),
         ]);
         setStats(statsRes.data);
-        // consultRes.data is already a list of enriched dicts from /my-history
         setConsultations(Array.isArray(consultRes.data) ? consultRes.data : []);
-        // Show CONFIRMED and PENDING appointments (not COMPLETED or REJECTED)
         setAppointments(
           apptsRes.data.filter((a: any) =>
             a.status === 'CONFIRMED' || a.status === 'PENDING'
@@ -74,15 +56,23 @@ export default function PatientDashboard() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex justify-between items-end">
+    <div className="space-y-6 animate-fade-in">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">{t('dashboard.patient_title')}</h2>
-          <p className="text-muted-foreground mt-1">{t('dashboard.patient_subtitle')}</p>
+          <h2 className="text-3xl font-bold tracking-tight" style={{ color: 'var(--color-text-primary)' }}>
+            {t('dashboard.patient_title')}
+          </h2>
+          <p className="mt-1" style={{ color: 'var(--color-text-tertiary)' }}>{t('dashboard.patient_subtitle')}</p>
         </div>
         <button
-          onClick={() => navigate('/book-appointment')}
-          className="bg-primary text-primary-foreground px-4 py-2 rounded-lg font-medium flex items-center gap-2 hover:bg-primary/90 transition-colors shadow-sm"
+          onClick={() => navigate('/ehealth/appointments')}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-200"
+          style={{
+            backgroundColor: 'var(--color-primary)',
+            color: 'white',
+            boxShadow: 'var(--shadow-button-primary)',
+          }}
         >
           <CalendarClock className="h-5 w-5" />
           {t('nav.book_appointment')}
@@ -91,45 +81,42 @@ export default function PatientDashboard() {
 
       {/* Stats */}
       <div className="grid gap-4 md:grid-cols-2">
-        <div className="bg-card border rounded-xl p-6 shadow-sm">
-          <div className="flex items-center justify-between pb-2">
-            <h3 className="tracking-tight text-sm font-medium">{t('dashboard.stat_total_consultations')}</h3>
-            <FileText className="h-4 w-4 text-muted-foreground" />
-          </div>
-          <div className="text-2xl font-bold">
-            {loading ? <Loader2 className="animate-spin h-5 w-5" /> : stats.total_consultations}
-          </div>
-        </div>
-        <div className="bg-card border rounded-xl p-6 shadow-sm">
-          <div className="flex items-center justify-between pb-2">
-            <h3 className="tracking-tight text-sm font-medium">{t('dashboard.stat_upcoming_patient')}</h3>
-            <CalendarClock className="h-4 w-4 text-muted-foreground" />
-          </div>
-          <div className="text-2xl font-bold">
-            {loading ? <Loader2 className="animate-spin h-5 w-5" /> : stats.upcoming_appointments}
-          </div>
-        </div>
+        <StatCard label={t('dashboard.stat_total_consultations')} value={stats.total_consultations} icon={FileText} loading={loading} />
+        <StatCard label={t('dashboard.stat_upcoming_patient')} value={stats.upcoming_appointments} icon={CalendarClock} loading={loading} highlight={stats.upcoming_appointments > 0} />
       </div>
 
       {/* Upcoming appointments */}
       {appointments.length > 0 && (
-        <div className="bg-card border rounded-xl shadow-sm overflow-hidden">
-          <div className="p-5 border-b bg-blue-50 flex items-center gap-2">
-            <CalendarDays className="h-5 w-5 text-blue-600" />
-            <h3 className="font-semibold text-blue-900">{t('appointments.active_title')}</h3>
+        <SectionCard>
+          <div
+            className="p-5 flex items-center gap-2"
+            style={{
+              borderBottom: '1px solid var(--color-border)',
+              backgroundColor: 'var(--color-info-light)',
+            }}
+          >
+            <CalendarDays className="h-5 w-5" style={{ color: 'var(--color-info)' }} />
+            <h3 className="font-semibold" style={{ color: 'var(--color-text-primary)' }}>{t('appointments.active_title')}</h3>
           </div>
-          <div className="divide-y">
+          <div>
             {appointments.map(appt => (
-              <div key={appt.id} className="p-5 flex items-center justify-between gap-4">
+              <div
+                key={appt.id}
+                className="p-5 flex items-center justify-between gap-4"
+                style={{ borderBottom: '1px solid var(--color-border)' }}
+              >
                 <div className="flex items-center gap-3">
-                  <div className="h-10 w-10 rounded-full bg-primary/10 text-primary flex items-center justify-center">
+                  <div
+                    className="h-10 w-10 rounded-full flex items-center justify-center"
+                    style={{ backgroundColor: 'var(--color-primary-light)', color: 'var(--color-primary)' }}
+                  >
                     <Stethoscope className="h-5 w-5" />
                   </div>
                   <div>
-                    <p className="font-medium text-sm">
+                    <p className="font-medium text-sm" style={{ color: 'var(--color-text-primary)' }}>
                       {t('appointments.patient_id', { id: appt.id })}
                     </p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
                       {new Date(appt.appointment_date).toLocaleString(undefined, {
                         weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
                         hour: '2-digit', minute: '2-digit'
@@ -137,62 +124,66 @@ export default function PatientDashboard() {
                     </p>
                   </div>
                 </div>
-                <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${
-                  appt.status === 'CONFIRMED'
-                    ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
-                    : 'bg-yellow-100 text-yellow-800 border-yellow-200'
-                }`}>
-                  {appt.status === 'CONFIRMED'
-                    ? t('common.status_confirmed')
-                    : t('common.status_pending')}
-                </span>
+                <StatusBadge status={appt.status} />
               </div>
             ))}
           </div>
-        </div>
+        </SectionCard>
       )}
 
       {/* Consultation history */}
-      <div className="bg-card border rounded-xl shadow-sm overflow-hidden">
-        <div className="p-5 border-b bg-slate-50 flex items-center gap-2">
-          <FileText className="h-5 w-5 text-primary" />
-          <h3 className="font-semibold text-lg">{t('consultation.history_title')}</h3>
+      <SectionCard>
+        <div
+          className="p-5 flex items-center gap-2"
+          style={{ borderBottom: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface-elevated)' }}
+        >
+          <FileText className="h-5 w-5" style={{ color: 'var(--color-primary)' }} />
+          <h3 className="font-semibold text-lg" style={{ color: 'var(--color-text-primary)' }}>{t('consultation.history_title')}</h3>
         </div>
 
         {loading ? (
-          <div className="p-12 flex justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
+          <div className="p-12 flex justify-center"><Spinner size="lg" /></div>
         ) : consultations.length === 0 ? (
-          <div className="p-12 text-center text-muted-foreground">
+          <div className="p-12 text-center" style={{ color: 'var(--color-text-tertiary)' }}>
             <FileText className="h-10 w-10 mx-auto mb-3 opacity-30" />
             <p className="font-medium">{t('consultation.no_consultations')}</p>
           </div>
         ) : (
-          <div className="divide-y">
+          <div>
             {consultations.map(c => (
-              <div key={c.id} className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-slate-50 transition-colors">
+              <div
+                key={c.id}
+                className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-4 transition-colors duration-150"
+                style={{ borderBottom: '1px solid var(--color-border)' }}
+                onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-surface-elevated)'}
+                onMouseLeave={(e) => e.currentTarget.style.backgroundColor = 'transparent'}
+              >
                 <div className="flex items-start gap-4">
-                  <div className={`h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-                    c.status === 'SIGNED' ? 'bg-emerald-100 text-emerald-600' : 'bg-yellow-100 text-yellow-600'
-                  }`}>
+                  <div
+                    className="h-10 w-10 rounded-full flex items-center justify-center flex-shrink-0"
+                    style={{
+                      backgroundColor: c.status === 'SIGNED' ? 'var(--color-success-light)' : 'var(--color-warning-light)',
+                      color: c.status === 'SIGNED' ? 'var(--color-success)' : 'var(--color-warning)',
+                    }}
+                  >
                     {c.status === 'SIGNED' ? <CheckCircle className="h-5 w-5" /> : <Clock className="h-5 w-5" />}
                   </div>
                   <div>
                     <div className="flex items-center gap-2 flex-wrap">
-                      <p className="font-semibold text-sm">Consultație #{c.id}</p>
+                      <p className="font-semibold text-sm" style={{ color: 'var(--color-text-primary)' }}>Consultație #{c.id}</p>
                       <StatusBadge status={c.status} />
                     </div>
-                    <p className="text-xs text-muted-foreground mt-0.5">
+                    <p className="text-xs mt-0.5" style={{ color: 'var(--color-text-tertiary)' }}>
                       Dr. {c.doctor_name} · {c.doctor_specialization}
                     </p>
-                    <p className="text-xs text-muted-foreground">
+                    <p className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
                       {new Date(c.created_at).toLocaleDateString(undefined, {
                         year: 'numeric', month: 'long', day: 'numeric'
                       })}
                       {c.signed_at && ` · ✅ ${new Date(c.signed_at).toLocaleDateString()}`}
                     </p>
-                    {/* ✅ FIX: use interpolation, not a string literal */}
                     {c.ai_draft_transcript && (
-                      <p className="text-xs text-muted-foreground mt-1 italic max-w-md truncate">
+                      <p className="text-xs mt-1 italic max-w-md truncate" style={{ color: 'var(--color-text-tertiary)' }}>
                         &ldquo;{c.ai_draft_transcript}&rdquo;
                       </p>
                     )}
@@ -202,7 +193,14 @@ export default function PatientDashboard() {
                 {c.pdf_report_url && (
                   <button
                     onClick={() => handleDownload(c.id)}
-                    className="flex items-center gap-2 px-4 py-2 border-2 border-primary text-primary rounded-lg text-sm font-semibold hover:bg-primary hover:text-white transition-all flex-shrink-0"
+                    className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all flex-shrink-0"
+                    style={{
+                      border: '2px solid var(--color-primary)',
+                      color: 'var(--color-primary)',
+                      backgroundColor: 'transparent',
+                    }}
+                    onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-primary)'; e.currentTarget.style.color = 'white'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--color-primary)'; }}
                   >
                     <Download className="h-4 w-4" />
                     {t('common.download_pdf')}
@@ -212,7 +210,7 @@ export default function PatientDashboard() {
             ))}
           </div>
         )}
-      </div>
+      </SectionCard>
     </div>
   );
 }

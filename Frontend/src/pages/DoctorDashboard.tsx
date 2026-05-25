@@ -1,43 +1,9 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { Users, Calendar, Activity, Loader2, Clock, Play, CheckCircle, XCircle, ClipboardList, Bell } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import api from '../api';
-
-/* ─── Toast ──────────────────────────────────────────────────────────── */
-interface ToastProps { message: string; type: 'success' | 'error'; onClose: () => void; }
-function Toast({ message, type, onClose }: ToastProps) {
-  useEffect(() => { const t = setTimeout(onClose, 4000); return () => clearTimeout(t); }, [onClose]);
-  return (
-    <div className={`fixed top-6 right-6 z-50 flex items-center gap-3 px-5 py-4 border-l-4 rounded-xl shadow-xl text-sm font-medium max-w-sm ${type === 'success' ? 'bg-emerald-50 border-emerald-500 text-emerald-800' : 'bg-red-50 border-red-500 text-red-800'}`}>
-      {type === 'success' ? <CheckCircle className="h-5 w-5 flex-shrink-0" /> : <XCircle className="h-5 w-5 flex-shrink-0" />}
-      <span className="flex-1">{message}</span>
-      <button onClick={onClose} className="opacity-60 hover:opacity-100 text-lg leading-none ml-2">&times;</button>
-    </div>
-  );
-}
-
-/* ─── Status Badge ───────────────────────────────────────────────────── */
-function StatusBadge({ status }: { status: string }) {
-  const { t } = useTranslation();
-  const styles: Record<string, string> = {
-    PENDING:   'bg-yellow-100 text-yellow-800 border-yellow-200',
-    CONFIRMED: 'bg-emerald-100 text-emerald-800 border-emerald-200',
-    COMPLETED: 'bg-blue-100 text-blue-800 border-blue-200',
-    REJECTED:  'bg-red-100 text-red-800 border-red-200',
-  };
-  const labels: Record<string, string> = {
-    PENDING:   t('common.status_pending'),
-    CONFIRMED: t('common.status_confirmed'),
-    COMPLETED: t('common.status_completed'),
-    REJECTED:  t('common.status_rejected'),
-  };
-  return (
-    <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${styles[status] || 'bg-gray-100 text-gray-700'}`}>
-      {labels[status] || status}
-    </span>
-  );
-}
+import { Toast, useToast, StatusBadge, StatCard, SectionCard, Spinner } from '../components/ui';
 
 /* ─── Appointment Card ───────────────────────────────────────────────── */
 interface ApptCardProps {
@@ -49,17 +15,31 @@ interface ApptCardProps {
 function AppointmentCard({ appt, onAction, onStart, actionLoading }: ApptCardProps) {
   const { t } = useTranslation();
   const isLoading = actionLoading === appt.id;
+
   return (
-    <div className={`p-5 transition-colors border-b last:border-b-0 ${appt.status === 'PENDING' ? 'bg-yellow-50/40' : 'bg-white'} hover:bg-slate-50`}>
+    <div
+      className="p-5 transition-all duration-200 last:border-b-0"
+      style={{
+        borderBottom: '1px solid var(--color-border)',
+        backgroundColor: appt.status === 'PENDING' ? 'var(--color-warning-light)' : 'var(--color-surface)',
+      }}
+      onMouseEnter={(e) => e.currentTarget.style.backgroundColor = 'var(--color-surface-elevated)'}
+      onMouseLeave={(e) => e.currentTarget.style.backgroundColor = appt.status === 'PENDING' ? 'var(--color-warning-light)' : 'var(--color-surface)'}
+    >
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="space-y-1">
           <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-full bg-primary/10 text-primary flex items-center justify-center font-bold text-sm">P{appt.patient_id}</div>
+            <div
+              className="h-9 w-9 rounded-full flex items-center justify-center font-bold text-sm"
+              style={{ backgroundColor: 'var(--color-primary-light)', color: 'var(--color-primary)' }}
+            >
+              P{appt.patient_id}
+            </div>
             <div>
-              <p className="font-semibold text-sm">
+              <p className="font-semibold text-sm" style={{ color: 'var(--color-text-primary)' }}>
                 {t('appointments.patient_id', { id: appt.patient_id })}
               </p>
-              <p className="text-xs text-muted-foreground flex items-center gap-1.5">
+              <p className="text-xs flex items-center gap-1.5" style={{ color: 'var(--color-text-tertiary)' }}>
                 <Calendar className="h-3.5 w-3.5" />
                 {new Date(appt.appointment_date).toLocaleString(undefined, {
                   weekday: 'long', year: 'numeric', month: 'long',
@@ -78,7 +58,8 @@ function AppointmentCard({ appt, onAction, onStart, actionLoading }: ApptCardPro
               <button
                 onClick={() => onAction(appt.id, 'CONFIRMED')}
                 disabled={isLoading}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
+                style={{ backgroundColor: 'var(--color-success)' }}
               >
                 {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle className="h-3.5 w-3.5" />}
                 {t('appointments.accept')}
@@ -86,7 +67,8 @@ function AppointmentCard({ appt, onAction, onStart, actionLoading }: ApptCardPro
               <button
                 onClick={() => onAction(appt.id, 'REJECTED')}
                 disabled={isLoading}
-                className="flex items-center gap-1.5 px-3 py-1.5 bg-red-600 hover:bg-red-700 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
+                className="flex items-center gap-1.5 px-3 py-1.5 text-white text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
+                style={{ backgroundColor: 'var(--color-error)' }}
               >
                 {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <XCircle className="h-3.5 w-3.5" />}
                 {t('appointments.reject')}
@@ -95,24 +77,29 @@ function AppointmentCard({ appt, onAction, onStart, actionLoading }: ApptCardPro
           )}
 
           {appt.status === 'CONFIRMED' && (
-            <button
-              onClick={() => onStart(appt)}
-              className="flex items-center gap-1.5 px-3 py-1.5 bg-destructive hover:bg-destructive/90 text-white text-xs font-semibold rounded-lg transition-colors shadow-sm"
-            >
-              <Play className="h-3.5 w-3.5 fill-current" />
-              {t('appointments.start_recording')}
-            </button>
-          )}
-
-          {appt.status === 'CONFIRMED' && (
-            <button
-              onClick={() => onAction(appt.id, 'REJECTED')}
-              disabled={isLoading}
-              className="flex items-center gap-1.5 px-3 py-1.5 border border-red-300 hover:bg-red-50 text-red-600 text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
-            >
-              <XCircle className="h-3.5 w-3.5" />
-              {t('appointments.reject')}
-            </button>
+            <>
+              <button
+                onClick={() => onStart(appt)}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-white text-xs font-semibold rounded-lg transition-colors"
+                style={{ backgroundColor: 'var(--color-primary)', boxShadow: 'var(--shadow-button-primary)' }}
+              >
+                <Play className="h-3.5 w-3.5 fill-current" />
+                {t('appointments.start_recording')}
+              </button>
+              <button
+                onClick={() => onAction(appt.id, 'REJECTED')}
+                disabled={isLoading}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg transition-colors disabled:opacity-50"
+                style={{
+                  border: '1px solid var(--color-error)',
+                  color: 'var(--color-error)',
+                  backgroundColor: 'transparent',
+                }}
+              >
+                <XCircle className="h-3.5 w-3.5" />
+                {t('appointments.reject')}
+              </button>
+            </>
           )}
         </div>
       </div>
@@ -128,10 +115,8 @@ export default function DoctorDashboard() {
   const [appointments, setAppointments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState<number | null>(null);
-  const [toast, setToast] = useState<{ message: string; type: 'success' | 'error' } | null>(null);
+  const { show: showToast, ToastNode } = useToast();
   const [activeTab, setActiveTab] = useState<'PENDING' | 'CONFIRMED' | 'ALL'>('PENDING');
-
-  const showToast = (message: string, type: 'success' | 'error') => setToast({ message, type });
 
   const fetchData = useCallback(async () => {
     try {
@@ -167,10 +152,9 @@ export default function DoctorDashboard() {
   };
 
   const handleStart = (appt: any) => {
-    navigate(`/audio-consultation?appointmentId=${appt.id}&patientId=${appt.patient_id}`);
+    navigate(`/ehealth/consultation?appointmentId=${appt.id}&patientId=${appt.patient_id}`);
   };
 
-  // ALL tab shows everything that isn't COMPLETED; other tabs filter by exact status
   const filteredAppts = appointments.filter(a => {
     if (activeTab === 'ALL') return a.status !== 'COMPLETED';
     return a.status === activeTab;
@@ -180,17 +164,27 @@ export default function DoctorDashboard() {
   const confirmedCount = appointments.filter(a => a.status === 'CONFIRMED').length;
 
   return (
-    <div className="space-y-6">
-      {toast && <Toast message={toast.message} type={toast.type} onClose={() => setToast(null)} />}
+    <div className="space-y-6 animate-fade-in">
+      {ToastNode}
 
-      <div className="flex justify-between items-end">
+      {/* Header */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-end gap-4">
         <div>
-          <h2 className="text-3xl font-bold tracking-tight">{t('dashboard.doctor_title')}</h2>
-          <p className="text-muted-foreground mt-1">{t('dashboard.doctor_subtitle')}</p>
+          <h2 className="text-3xl font-bold tracking-tight" style={{ color: 'var(--color-text-primary)' }}>
+            {t('dashboard.doctor_title')}
+          </h2>
+          <p className="mt-1" style={{ color: 'var(--color-text-tertiary)' }}>{t('dashboard.doctor_subtitle')}</p>
         </div>
         <button
-          onClick={() => navigate('/doctor-consultations')}
-          className="flex items-center gap-2 px-4 py-2 border-2 border-primary text-primary rounded-lg font-medium hover:bg-primary hover:text-white transition-all text-sm"
+          onClick={() => navigate('/ehealth/consultations')}
+          className="flex items-center gap-2 px-4 py-2.5 rounded-xl font-semibold text-sm transition-all duration-200 hover:opacity-90"
+          style={{
+            border: '2px solid var(--color-primary)',
+            color: 'var(--color-primary)',
+            backgroundColor: 'transparent',
+          }}
+          onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = 'var(--color-primary)'; e.currentTarget.style.color = 'white'; }}
+          onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = 'transparent'; e.currentTarget.style.color = 'var(--color-primary)'; }}
         >
           <ClipboardList className="h-4 w-4" />
           {t('nav.my_consultations')}
@@ -199,37 +193,36 @@ export default function DoctorDashboard() {
 
       {/* Stats cards */}
       <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        {[
-          { label: t('dashboard.stat_total_patients'),     value: stats.total_patients,        Icon: Users },
-          { label: t('dashboard.stat_consultations_today'),value: stats.consultations_today,   Icon: Activity },
-          { label: t('dashboard.stat_upcoming'),           value: stats.upcoming_appointments, Icon: Calendar },
-          { label: t('dashboard.stat_pending'),            value: stats.pending_appointments,  Icon: Bell, highlight: stats.pending_appointments > 0 },
-        ].map(({ label, value, Icon, highlight }) => (
-          <div key={label} className={`border rounded-xl p-6 shadow-sm transition-colors ${highlight ? 'bg-yellow-50 border-yellow-200' : 'bg-card'}`}>
-            <div className="flex items-center justify-between pb-2">
-              <h3 className="tracking-tight text-sm font-medium">{label}</h3>
-              <Icon className={`h-4 w-4 ${highlight ? 'text-yellow-600' : 'text-muted-foreground'}`} />
-            </div>
-            <div className={`text-2xl font-bold ${highlight ? 'text-yellow-700' : ''}`}>
-              {loading ? <Loader2 className="animate-spin h-5 w-5" /> : value}
-            </div>
-          </div>
-        ))}
+        <StatCard label={t('dashboard.stat_total_patients')} value={stats.total_patients} icon={Users} loading={loading} />
+        <StatCard label={t('dashboard.stat_consultations_today')} value={stats.consultations_today} icon={Activity} loading={loading} />
+        <StatCard label={t('dashboard.stat_upcoming')} value={stats.upcoming_appointments} icon={Calendar} loading={loading} />
+        <StatCard label={t('dashboard.stat_pending')} value={stats.pending_appointments} icon={Bell} loading={loading} highlight={stats.pending_appointments > 0} />
       </div>
 
       {/* Appointments section */}
-      <div className="bg-card border rounded-xl shadow-sm overflow-hidden">
+      <SectionCard>
         {/* Header + tabs */}
-        <div className="p-5 border-b bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <h3 className="font-semibold text-lg flex items-center gap-2">
-            <ClipboardList className="h-5 w-5 text-primary" /> {t('appointments.title')}
+        <div
+          className="p-5 flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+          style={{ borderBottom: '1px solid var(--color-border)', backgroundColor: 'var(--color-surface-elevated)' }}
+        >
+          <h3 className="font-semibold text-lg flex items-center gap-2" style={{ color: 'var(--color-text-primary)' }}>
+            <ClipboardList className="h-5 w-5" style={{ color: 'var(--color-primary)' }} /> {t('appointments.title')}
           </h3>
-          <div className="flex gap-1 bg-muted rounded-lg p-1 text-sm">
+          <div
+            className="flex gap-1 rounded-lg p-1 text-sm"
+            style={{ backgroundColor: 'var(--color-surface-elevated)' }}
+          >
             {(['PENDING', 'CONFIRMED', 'ALL'] as const).map(tab => (
               <button
                 key={tab}
                 onClick={() => setActiveTab(tab)}
-                className={`px-3 py-1.5 rounded-md font-medium transition-all ${activeTab === tab ? 'bg-white shadow text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
+                className="px-3 py-1.5 rounded-md font-medium transition-all"
+                style={{
+                  backgroundColor: activeTab === tab ? 'var(--color-surface)' : 'transparent',
+                  color: activeTab === tab ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
+                  boxShadow: activeTab === tab ? 'var(--shadow-card)' : 'none',
+                }}
               >
                 {tab === 'PENDING'
                   ? `${t('appointments.tab_pending')}${pendingCount > 0 ? ` (${pendingCount})` : ''}`
@@ -242,9 +235,9 @@ export default function DoctorDashboard() {
         </div>
 
         {loading ? (
-          <div className="p-12 flex justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
+          <div className="p-12 flex justify-center"><Spinner size="lg" /></div>
         ) : filteredAppts.length === 0 ? (
-          <div className="p-12 text-center text-muted-foreground">
+          <div className="p-12 text-center" style={{ color: 'var(--color-text-tertiary)' }}>
             <Clock className="h-10 w-10 mx-auto mb-3 opacity-30" />
             <p className="font-medium">
               {activeTab === 'PENDING'   ? t('appointments.no_pending')
@@ -253,7 +246,7 @@ export default function DoctorDashboard() {
             </p>
           </div>
         ) : (
-          <div className="divide-y">
+          <div>
             {filteredAppts.map(appt => (
               <AppointmentCard
                 key={appt.id}
@@ -265,7 +258,7 @@ export default function DoctorDashboard() {
             ))}
           </div>
         )}
-      </div>
+      </SectionCard>
     </div>
   );
 }

@@ -8,6 +8,25 @@ from routers import auth_router, profile_router, consultation_router, appointmen
 
 Base.metadata.create_all(bind=engine)
 
+# ── Sync Python enum values into PostgreSQL ──────────────────────────────────
+# SQLAlchemy's create_all does NOT add new values to existing PG enum types.
+# This block ensures the DB enum stays in sync with the Python model.
+from sqlalchemy import text as _text
+_ENUM_SYNC = {
+    "appointmentstatus": [e.value for e in consultation.AppointmentStatus],
+    "consultationstatus": [e.value for e in consultation.ConsultationStatus],
+}
+with engine.connect() as _conn:
+    for _pg_type, _py_values in _ENUM_SYNC.items():
+        for _val in _py_values:
+            try:
+                _conn.execute(_text(
+                    f"ALTER TYPE {_pg_type} ADD VALUE IF NOT EXISTS '{_val}'"
+                ))
+                _conn.commit()
+            except Exception:
+                _conn.rollback()
+
 os.makedirs("uploads/audio", exist_ok=True)
 os.makedirs("uploads/pdf", exist_ok=True)
 os.makedirs("uploads/avatars", exist_ok=True)

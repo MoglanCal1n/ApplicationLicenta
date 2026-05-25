@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, useSearchParams, Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import api from '../api';
-import { Stethoscope, Loader2, KeyRound } from 'lucide-react';
+import { Loader2, KeyRound, Lock, CheckCircle, AlertTriangle } from 'lucide-react';
 
 export default function ResetPassword() {
   const { t } = useTranslation();
@@ -44,13 +44,26 @@ export default function ResetPassword() {
     }
   };
 
+  const cardStyle = {
+    backgroundColor: 'var(--color-surface)',
+    border: '1px solid var(--color-border)',
+    boxShadow: 'var(--shadow-card)',
+  };
+
   if (!token) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-muted/30 px-4 text-center">
-        <div className="max-w-md w-full bg-card border rounded-xl shadow-lg p-8">
-          <h2 className="text-xl font-bold text-destructive mb-2">{t('reset_password.invalid_link')}</h2>
-          <p className="text-muted-foreground mb-6">{t('reset_password.request_new')}</p>
-          <Link to="/forgot-password" className="text-primary hover:underline font-medium">
+      <div className="min-h-screen flex items-center justify-center px-4 text-center" style={{ backgroundColor: 'var(--color-background)' }}>
+        <div className="max-w-md w-full rounded-2xl p-8 animate-fade-in-up" style={cardStyle}>
+          <div className="p-4 rounded-full inline-flex mb-4" style={{ backgroundColor: 'var(--color-error-light)' }}>
+            <AlertTriangle className="h-10 w-10" style={{ color: 'var(--color-error)' }} />
+          </div>
+          <h2 className="text-xl font-bold mb-2" style={{ color: 'var(--color-error)' }}>
+            {t('reset_password.invalid_link')}
+          </h2>
+          <p className="mb-6" style={{ color: 'var(--color-text-tertiary)' }}>
+            {t('reset_password.request_new')}
+          </p>
+          <Link to="/forgot-password" className="font-semibold hover:underline" style={{ color: 'var(--color-primary)' }}>
             {t('reset_password.go_to_forgot')}
           </Link>
         </div>
@@ -59,48 +72,83 @@ export default function ResetPassword() {
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-muted/30 px-4">
-      <div className="max-w-md w-full bg-card border rounded-xl shadow-lg p-8">
+    <div className="min-h-screen flex items-center justify-center px-4 py-12 relative overflow-hidden" style={{ backgroundColor: 'var(--color-background)' }}>
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute -top-40 -left-40 w-96 h-96 rounded-full opacity-15 blur-3xl" style={{ background: 'var(--color-primary)' }} />
+      </div>
+
+      <div className="max-w-md w-full rounded-2xl p-8 relative animate-fade-in-up" style={cardStyle}>
         <div className="flex flex-col items-center mb-8">
-          <div className="bg-primary/10 p-3 rounded-full mb-4">
-            <KeyRound className="h-8 w-8 text-primary" />
+          <div className="p-4 rounded-2xl mb-4" style={{ backgroundColor: 'var(--color-primary-light)' }}>
+            <KeyRound className="h-8 w-8" style={{ color: 'var(--color-primary)' }} />
           </div>
-          <h2 className="text-2xl font-bold">{t('reset_password.title')}</h2>
-          <p className="text-muted-foreground text-sm text-center mt-2">
+          <h1 className="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>
+            {t('reset_password.title')}
+          </h1>
+          <p className="text-sm text-center mt-2" style={{ color: 'var(--color-text-tertiary)' }}>
             {t('reset_password.subtitle')}
           </p>
         </div>
 
         {success ? (
-          <div className="bg-green-500/10 text-green-600 text-sm p-4 rounded-md mb-6 border border-green-500/20 text-center font-medium">
-            {t('reset_password.success_msg')}
+          <div className="flex flex-col items-center text-center animate-fade-in">
+            <div className="p-4 rounded-full mb-4" style={{ backgroundColor: 'var(--color-success-light)' }}>
+              <CheckCircle className="h-12 w-12" style={{ color: 'var(--color-success)' }} />
+            </div>
+            <p className="text-sm font-semibold" style={{ color: 'var(--color-success)' }}>
+              {t('reset_password.success_msg')}
+            </p>
           </div>
         ) : (
           <>
             {error && (
-              <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md mb-6 border border-destructive/20">
+              <div
+                className="text-sm p-3 rounded-xl mb-6"
+                style={{
+                  backgroundColor: 'var(--color-error-light)',
+                  color: 'var(--color-error)',
+                  border: '1px solid var(--color-error)',
+                }}
+              >
                 {error}
               </div>
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-4">
+            <form onSubmit={handleSubmit} className="space-y-5">
               <div>
-                <label className="block text-sm font-medium mb-1">{t('reset_password.new_password')}</label>
-                <input
-                  type="password"
-                  required
-                  className="w-full p-2 border rounded-md bg-background focus:ring-2 focus:ring-primary outline-none transition-all"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder="••••••••"
-                  minLength={6}
-                />
+                <label className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--color-text-secondary)' }}>
+                  {t('reset_password.new_password')}
+                </label>
+                <div className="relative">
+                  <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: 'var(--color-text-tertiary)' }} />
+                  <input
+                    type="password"
+                    required
+                    className="w-full pl-10 pr-4 py-3 rounded-xl text-sm outline-none transition-all"
+                    style={{
+                      backgroundColor: 'var(--color-surface-elevated)',
+                      border: '2px solid var(--color-border)',
+                      color: 'var(--color-text-primary)',
+                    }}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder="••••••••"
+                    minLength={6}
+                    onFocus={(e) => e.target.style.borderColor = 'var(--color-primary)'}
+                    onBlur={(e) => e.target.style.borderColor = 'var(--color-border)'}
+                  />
+                </div>
               </div>
 
               <button
                 type="submit"
                 disabled={loading}
-                className="w-full bg-primary text-primary-foreground py-2 rounded-md font-medium hover:bg-primary/90 transition-colors flex justify-center items-center h-10 mt-4"
+                className="w-full py-3 rounded-xl font-semibold text-sm flex justify-center items-center gap-2 transition-all hover:opacity-90 disabled:opacity-50"
+                style={{
+                  backgroundColor: 'var(--color-primary)',
+                  color: 'white',
+                  boxShadow: 'var(--shadow-button-primary)',
+                }}
               >
                 {loading ? <Loader2 className="animate-spin h-5 w-5" /> : t('reset_password.save_btn')}
               </button>

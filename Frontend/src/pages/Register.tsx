@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import api from '../api';
-import { Stethoscope, Loader2, User, UserPlus } from 'lucide-react';
+import { Stethoscope, Loader2, UserPlus, Mail, Lock, KeyRound, ArrowRight } from 'lucide-react';
 
 export default function Register() {
   const { t } = useTranslation();
@@ -35,98 +35,180 @@ export default function Register() {
     }
   };
 
+  const inputStyle = {
+    backgroundColor: 'var(--color-surface-elevated)',
+    border: '2px solid var(--color-border)',
+    color: 'var(--color-text-primary)',
+  };
+
   return (
-    <div className="min-h-screen flex items-center justify-center bg-muted/30 px-4 py-12">
-      <div className="max-w-md w-full bg-card border rounded-xl shadow-lg p-8">
+    <div
+      className="min-h-screen flex items-center justify-center px-4 py-12 relative overflow-hidden"
+      style={{ backgroundColor: 'var(--color-background)' }}
+    >
+      {/* Decorative background */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        <div className="absolute -top-40 -left-40 w-96 h-96 rounded-full opacity-20 blur-3xl" style={{ background: 'var(--color-primary)' }} />
+        <div className="absolute -bottom-40 -right-40 w-96 h-96 rounded-full opacity-10 blur-3xl" style={{ background: 'var(--color-primary)' }} />
+      </div>
+
+      <div
+        className="max-w-md w-full rounded-2xl p-8 relative animate-fade-in-up"
+        style={{
+          backgroundColor: 'var(--color-surface)',
+          border: '1px solid var(--color-border)',
+          boxShadow: 'var(--shadow-card)',
+        }}
+      >
+        {/* Logo */}
         <div className="flex flex-col items-center mb-6">
-          <div className="bg-primary/10 p-3 rounded-full mb-4">
-            <UserPlus className="h-8 w-8 text-primary" />
+          <div className="p-4 rounded-2xl mb-4" style={{ backgroundColor: 'var(--color-primary-light)' }}>
+            <UserPlus className="h-8 w-8" style={{ color: 'var(--color-primary)' }} />
           </div>
-          <h2 className="text-2xl font-bold">{t('register.title')}</h2>
-          <p className="text-muted-foreground text-sm">{t('register.subtitle')}</p>
+          <h1 className="text-2xl font-bold" style={{ color: 'var(--color-text-primary)' }}>
+            {t('register.title')}
+          </h1>
+          <p className="text-sm mt-1" style={{ color: 'var(--color-text-tertiary)' }}>
+            {t('register.subtitle')}
+          </p>
         </div>
 
-        <div className="flex p-1 bg-muted rounded-lg mb-6">
-          <button
-            type="button"
-            className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${role === 'PATIENT' ? 'bg-background shadow text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-            onClick={() => setRole('PATIENT')}
-          >
-            {t('register.patient_role')}
-          </button>
-          <button
-            type="button"
-            className={`flex-1 py-2 text-sm font-medium rounded-md transition-all ${role === 'DOCTOR' ? 'bg-background shadow text-foreground' : 'text-muted-foreground hover:text-foreground'}`}
-            onClick={() => setRole('DOCTOR')}
-          >
-            {t('register.doctor_role')}
-          </button>
+        {/* Role Toggle */}
+        <div
+          className="flex p-1 rounded-xl mb-6"
+          style={{ backgroundColor: 'var(--color-surface-elevated)' }}
+        >
+          {(['PATIENT', 'DOCTOR'] as const).map(r => (
+            <button
+              key={r}
+              type="button"
+              className="flex-1 py-2.5 text-sm font-semibold rounded-lg transition-all duration-200"
+              style={{
+                backgroundColor: role === r ? 'var(--color-surface)' : 'transparent',
+                color: role === r ? 'var(--color-text-primary)' : 'var(--color-text-tertiary)',
+                boxShadow: role === r ? 'var(--shadow-card)' : 'none',
+              }}
+              onClick={() => setRole(r)}
+            >
+              {r === 'PATIENT' ? `🧑 ${t('register.patient_role')}` : `👨‍⚕️ ${t('register.doctor_role')}`}
+            </button>
+          ))}
         </div>
 
+        {/* Error */}
         {error && (
-          <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md mb-6 border border-destructive/20">
+          <div
+            className="text-sm p-3 rounded-xl mb-6 flex items-center gap-2"
+            style={{
+              backgroundColor: 'var(--color-error-light)',
+              color: 'var(--color-error)',
+              border: '1px solid var(--color-error)',
+            }}
+          >
+            <span className="text-lg">⚠</span>
             {error}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-5">
           <div>
-            <label className="block text-sm font-medium mb-1">{t('register.email')}</label>
-            <input
-              type="email"
-              required
-              className="w-full p-2 border rounded-md bg-background focus:ring-2 focus:ring-primary outline-none transition-all"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="you@example.com"
-            />
+            <label className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--color-text-secondary)' }}>
+              {t('register.email')}
+            </label>
+            <div className="relative">
+              <Mail className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: 'var(--color-text-tertiary)' }} />
+              <input
+                type="email"
+                required
+                className="w-full pl-10 pr-4 py-3 rounded-xl text-sm outline-none transition-all"
+                style={inputStyle}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="you@example.com"
+                onFocus={(e) => e.target.style.borderColor = 'var(--color-primary)'}
+                onBlur={(e) => e.target.style.borderColor = 'var(--color-border)'}
+              />
+            </div>
           </div>
+
           <div>
-            <label className="block text-sm font-medium mb-1">{t('register.password')}</label>
-            <input
-              type="password"
-              required
-              className="w-full p-2 border rounded-md bg-background focus:ring-2 focus:ring-primary outline-none transition-all"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-            />
+            <label className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--color-text-secondary)' }}>
+              {t('register.password')}
+            </label>
+            <div className="relative">
+              <Lock className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: 'var(--color-text-tertiary)' }} />
+              <input
+                type="password"
+                required
+                className="w-full pl-10 pr-4 py-3 rounded-xl text-sm outline-none transition-all"
+                style={inputStyle}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                onFocus={(e) => e.target.style.borderColor = 'var(--color-primary)'}
+                onBlur={(e) => e.target.style.borderColor = 'var(--color-border)'}
+              />
+            </div>
           </div>
 
           {role === 'DOCTOR' && (
-            <div>
-              <label className="block text-sm font-medium mb-1">{t('register.admin_code')}</label>
-              <input
-                type="text"
-                required
-                className="w-full p-2 border rounded-md bg-background focus:ring-2 focus:ring-primary outline-none transition-all"
-                value={adminCode}
-                onChange={(e) => setAdminCode(e.target.value)}
-              />
+            <div className="animate-fade-in">
+              <label className="block text-sm font-semibold mb-1.5" style={{ color: 'var(--color-text-secondary)' }}>
+                {t('register.admin_code')}
+              </label>
+              <div className="relative">
+                <KeyRound className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4" style={{ color: 'var(--color-text-tertiary)' }} />
+                <input
+                  type="text"
+                  required
+                  className="w-full pl-10 pr-4 py-3 rounded-xl text-sm outline-none transition-all"
+                  style={inputStyle}
+                  value={adminCode}
+                  onChange={(e) => setAdminCode(e.target.value)}
+                  onFocus={(e) => e.target.style.borderColor = 'var(--color-primary)'}
+                  onBlur={(e) => e.target.style.borderColor = 'var(--color-border)'}
+                />
+              </div>
             </div>
           )}
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-primary text-primary-foreground py-2 rounded-md font-medium hover:bg-primary/90 transition-colors flex justify-center items-center h-10 mt-2"
+            className="w-full py-3 rounded-xl font-semibold text-sm flex justify-center items-center gap-2 transition-all duration-200 hover:opacity-90 disabled:opacity-50 mt-2"
+            style={{
+              backgroundColor: 'var(--color-primary)',
+              color: 'white',
+              boxShadow: 'var(--shadow-button-primary)',
+            }}
           >
-            {loading ? <Loader2 className="animate-spin h-5 w-5" /> : t('register.create_btn')}
+            {loading ? <Loader2 className="animate-spin h-5 w-5" /> : (
+              <>{t('register.create_btn')} <ArrowRight className="h-4 w-4" /></>
+            )}
           </button>
         </form>
 
+        {/* Divider */}
         <div className="relative my-6">
           <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-border"></div>
+            <div className="w-full" style={{ borderTop: '1px solid var(--color-border)' }} />
           </div>
-          <div className="relative flex justify-center text-sm">
-            <span className="px-2 bg-card text-muted-foreground">{t('register.or_register_with')}</span>
+          <div className="relative flex justify-center text-xs">
+            <span className="px-3 font-medium" style={{ backgroundColor: 'var(--color-surface)', color: 'var(--color-text-tertiary)' }}>
+              {t('register.or_register_with')}
+            </span>
           </div>
         </div>
 
+        {/* Google */}
         <button
           onClick={() => window.location.href = `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/auth/google/login`}
-          className="w-full border py-2 rounded-md font-medium hover:bg-muted transition-colors flex justify-center items-center h-10 gap-2"
+          className="w-full py-3 rounded-xl font-medium text-sm flex justify-center items-center gap-2 transition-all hover:opacity-80"
+          style={{
+            backgroundColor: 'var(--color-surface-elevated)',
+            border: '2px solid var(--color-border)',
+            color: 'var(--color-text-primary)',
+          }}
         >
           <svg className="h-5 w-5" viewBox="0 0 24 24">
             <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
@@ -137,9 +219,9 @@ export default function Register() {
           Google
         </button>
 
-        <div className="mt-6 text-center text-sm text-muted-foreground">
+        <div className="mt-6 text-center text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
           {t('register.already_have_account')}{' '}
-          <Link to="/login" className="text-primary hover:underline font-medium">
+          <Link to="/login" className="font-semibold hover:underline" style={{ color: 'var(--color-primary)' }}>
             {t('register.sign_in_here')}
           </Link>
         </div>

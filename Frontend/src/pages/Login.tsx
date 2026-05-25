@@ -3,7 +3,7 @@ import { useNavigate, Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import api from '../api';
 import { useAuth } from '../context/AuthContext';
-import { Stethoscope, Loader2 } from 'lucide-react';
+import { Stethoscope, Loader2, Mail, Lock, ArrowRight } from 'lucide-react';
 
 export default function Login() {
   const { t } = useTranslation();
@@ -30,7 +30,7 @@ export default function Login() {
       });
       
       await checkAuth();
-      navigate('/dashboard');
+      navigate('/ehealth/dashboard');
     } catch (err: any) {
       setError(err.response?.data?.detail || t('login.invalid_credentials'));
     } finally {
@@ -39,72 +39,183 @@ export default function Login() {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-muted/30 px-4">
-      <div className="max-w-md w-full bg-card border rounded-xl shadow-lg p-8">
+    <div
+      className="min-h-screen flex items-center justify-center px-4 py-12 relative overflow-hidden"
+      style={{ backgroundColor: 'var(--color-background)' }}
+    >
+      {/* Decorative background */}
+      <div className="absolute inset-0 pointer-events-none overflow-hidden">
+        <div
+          className="absolute -top-40 -right-40 w-96 h-96 rounded-full opacity-20 blur-3xl"
+          style={{ background: 'var(--color-primary)' }}
+        />
+        <div
+          className="absolute -bottom-40 -left-40 w-96 h-96 rounded-full opacity-10 blur-3xl"
+          style={{ background: 'var(--color-primary)' }}
+        />
+      </div>
+
+      <div
+        className="max-w-md w-full rounded-2xl p-8 relative animate-fade-in-up"
+        style={{
+          backgroundColor: 'var(--color-surface)',
+          border: '1px solid var(--color-border)',
+          boxShadow: 'var(--shadow-card)',
+        }}
+      >
+        {/* Logo & Title */}
         <div className="flex flex-col items-center mb-8">
-          <div className="bg-primary/10 p-3 rounded-full mb-4">
-            <Stethoscope className="h-8 w-8 text-primary" />
+          <div
+            className="p-4 rounded-2xl mb-4"
+            style={{ backgroundColor: 'var(--color-primary-light)' }}
+          >
+            <Stethoscope className="h-8 w-8" style={{ color: 'var(--color-primary)' }} />
           </div>
-          <h2 className="text-2xl font-bold">{t('login.welcome_back')}</h2>
-          <p className="text-muted-foreground text-sm">{t('login.subtitle')}</p>
+          <h1
+            className="text-2xl font-bold"
+            style={{ color: 'var(--color-text-primary)' }}
+          >
+            {t('login.welcome_back')}
+          </h1>
+          <p
+            className="text-sm mt-1"
+            style={{ color: 'var(--color-text-tertiary)' }}
+          >
+            {t('login.subtitle')}
+          </p>
         </div>
 
+        {/* Error */}
         {error && (
-          <div className="bg-destructive/10 text-destructive text-sm p-3 rounded-md mb-6 border border-destructive/20">
+          <div
+            className="text-sm p-3 rounded-xl mb-6 flex items-center gap-2"
+            style={{
+              backgroundColor: 'var(--color-error-light)',
+              color: 'var(--color-error)',
+              border: '1px solid var(--color-error)',
+            }}
+          >
+            <span className="text-lg">⚠</span>
             {error}
           </div>
         )}
 
-        <form onSubmit={handleSubmit} className="space-y-4">
+        <form onSubmit={handleSubmit} className="space-y-5">
+          {/* Email */}
           <div>
-            <label className="block text-sm font-medium mb-1">{t('login.email')}</label>
-            <input
-              type="email"
-              required
-              className="w-full p-2 border rounded-md bg-background focus:ring-2 focus:ring-primary outline-none transition-all"
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              placeholder="doctor@clinic.com"
-            />
+            <label
+              className="block text-sm font-semibold mb-1.5"
+              style={{ color: 'var(--color-text-secondary)' }}
+            >
+              {t('login.email')}
+            </label>
+            <div className="relative">
+              <Mail
+                className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4"
+                style={{ color: 'var(--color-text-tertiary)' }}
+              />
+              <input
+                type="email"
+                required
+                className="w-full pl-10 pr-4 py-3 rounded-xl text-sm outline-none transition-all"
+                style={{
+                  backgroundColor: 'var(--color-surface-elevated)',
+                  border: '2px solid var(--color-border)',
+                  color: 'var(--color-text-primary)',
+                }}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                placeholder="doctor@clinic.com"
+                onFocus={(e) => e.target.style.borderColor = 'var(--color-primary)'}
+                onBlur={(e) => e.target.style.borderColor = 'var(--color-border)'}
+              />
+            </div>
           </div>
+
+          {/* Password */}
           <div>
-            <div className="flex justify-between items-center mb-1">
-              <label className="block text-sm font-medium">{t('login.password')}</label>
-              <Link to="/forgot-password" className="text-xs text-primary hover:underline">
+            <div className="flex justify-between items-center mb-1.5">
+              <label
+                className="block text-sm font-semibold"
+                style={{ color: 'var(--color-text-secondary)' }}
+              >
+                {t('login.password')}
+              </label>
+              <Link
+                to="/forgot-password"
+                className="text-xs font-medium hover:underline"
+                style={{ color: 'var(--color-primary)' }}
+              >
                 {t('login.forgot_password')}
               </Link>
             </div>
-            <input
-              type="password"
-              required
-              className="w-full p-2 border rounded-md bg-background focus:ring-2 focus:ring-primary outline-none transition-all"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              placeholder="••••••••"
-            />
+            <div className="relative">
+              <Lock
+                className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4"
+                style={{ color: 'var(--color-text-tertiary)' }}
+              />
+              <input
+                type="password"
+                required
+                className="w-full pl-10 pr-4 py-3 rounded-xl text-sm outline-none transition-all"
+                style={{
+                  backgroundColor: 'var(--color-surface-elevated)',
+                  border: '2px solid var(--color-border)',
+                  color: 'var(--color-text-primary)',
+                }}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                placeholder="••••••••"
+                onFocus={(e) => e.target.style.borderColor = 'var(--color-primary)'}
+                onBlur={(e) => e.target.style.borderColor = 'var(--color-border)'}
+              />
+            </div>
           </div>
 
+          {/* Submit */}
           <button
             type="submit"
             disabled={loading}
-            className="w-full bg-primary text-primary-foreground py-2 rounded-md font-medium hover:bg-primary/90 transition-colors flex justify-center items-center h-10 mt-4"
+            className="w-full py-3 rounded-xl font-semibold text-sm flex justify-center items-center gap-2 transition-all duration-200 hover:opacity-90 disabled:opacity-50"
+            style={{
+              backgroundColor: 'var(--color-primary)',
+              color: 'white',
+              boxShadow: 'var(--shadow-button-primary)',
+            }}
           >
-            {loading ? <Loader2 className="animate-spin h-5 w-5" /> : t('login.sign_in')}
+            {loading ? <Loader2 className="animate-spin h-5 w-5" /> : (
+              <>{t('login.sign_in')} <ArrowRight className="h-4 w-4" /></>
+            )}
           </button>
         </form>
 
+        {/* Divider */}
         <div className="relative my-6">
           <div className="absolute inset-0 flex items-center">
-            <div className="w-full border-t border-border"></div>
+            <div className="w-full" style={{ borderTop: '1px solid var(--color-border)' }} />
           </div>
-          <div className="relative flex justify-center text-sm">
-            <span className="px-2 bg-card text-muted-foreground">{t('login.or_continue_with')}</span>
+          <div className="relative flex justify-center text-xs">
+            <span
+              className="px-3 font-medium"
+              style={{
+                backgroundColor: 'var(--color-surface)',
+                color: 'var(--color-text-tertiary)',
+              }}
+            >
+              {t('login.or_continue_with')}
+            </span>
           </div>
         </div>
 
+        {/* Google OAuth */}
         <button
           onClick={() => window.location.href = `${import.meta.env.VITE_API_URL || 'http://localhost:8000'}/auth/google/login`}
-          className="w-full border py-2 rounded-md font-medium hover:bg-muted transition-colors flex justify-center items-center h-10 gap-2"
+          className="w-full py-3 rounded-xl font-medium text-sm flex justify-center items-center gap-2 transition-all duration-200 hover:opacity-80"
+          style={{
+            backgroundColor: 'var(--color-surface-elevated)',
+            border: '2px solid var(--color-border)',
+            color: 'var(--color-text-primary)',
+          }}
         >
           <svg className="h-5 w-5" viewBox="0 0 24 24">
             <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
@@ -115,9 +226,14 @@ export default function Login() {
           Google
         </button>
 
-        <div className="mt-6 text-center text-sm text-muted-foreground">
+        {/* Footer link */}
+        <div className="mt-6 text-center text-sm" style={{ color: 'var(--color-text-tertiary)' }}>
           {t('login.no_account')}{' '}
-          <Link to="/register" className="text-primary hover:underline font-medium">
+          <Link
+            to="/register"
+            className="font-semibold hover:underline"
+            style={{ color: 'var(--color-primary)' }}
+          >
             {t('login.register_here')}
           </Link>
         </div>

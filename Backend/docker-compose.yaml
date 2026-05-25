@@ -39,5 +39,15 @@ services:
       - ../Frontend:/app
       - /app/node_modules # Prevent host from overwriting container's node_modules
       
+  ollama:
+    image: ollama/ollama:latest
+    container_name: licenta_ollama
+    restart: always
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+
 volumes:
   postgres_data:
+  ollama_data:
