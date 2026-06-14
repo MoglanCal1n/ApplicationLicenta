@@ -1,9 +1,10 @@
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { Users, Calendar, Activity, Loader2, Clock, Play, CheckCircle, XCircle, ClipboardList, Bell } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import api from '../api';
+import api, { API_BASE_URL } from '../api';
 import { Toast, useToast, StatusBadge, StatCard, SectionCard, Spinner } from '../components/ui';
+import { NOTIFICATION_EVENT } from '../context/NotificationContext';
 
 /* ─── Appointment Card ───────────────────────────────────────────────── */
 interface ApptCardProps {
@@ -29,15 +30,27 @@ function AppointmentCard({ appt, onAction, onStart, actionLoading }: ApptCardPro
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="space-y-1">
           <div className="flex items-center gap-3">
-            <div
-              className="h-9 w-9 rounded-full flex items-center justify-center font-bold text-sm"
-              style={{ backgroundColor: 'var(--color-primary-light)', color: 'var(--color-primary)' }}
-            >
-              P{appt.patient_id}
+            <div className="h-10 w-10 rounded-full flex-shrink-0 overflow-hidden border border-slate-200">
+              {appt.patient_picture_url ? (
+                <img
+                  src={`${API_BASE_URL}${appt.patient_picture_url}`}
+                  alt={appt.patient_name || 'Patient'}
+                  className="h-full w-full object-cover"
+                />
+              ) : (
+                <div
+                  className="h-full w-full flex items-center justify-center font-bold text-sm text-white"
+                  style={{ backgroundColor: 'var(--color-primary)' }}
+                >
+                  {appt.patient_name
+                    ? appt.patient_name.split(' ').map((n: string) => n[0]).join('').toUpperCase()
+                    : 'P'}
+                </div>
+              )}
             </div>
             <div>
               <p className="font-semibold text-sm" style={{ color: 'var(--color-text-primary)' }}>
-                {t('appointments.patient_id', { id: appt.patient_id })}
+                {appt.patient_name || t('appointments.patient_id', { id: appt.patient_id })}
               </p>
               <p className="text-xs flex items-center gap-1.5" style={{ color: 'var(--color-text-tertiary)' }}>
                 <Calendar className="h-3.5 w-3.5" />
@@ -117,6 +130,7 @@ export default function DoctorDashboard() {
   const [actionLoading, setActionLoading] = useState<number | null>(null);
   const { show: showToast, ToastNode } = useToast();
   const [activeTab, setActiveTab] = useState<'PENDING' | 'CONFIRMED' | 'ALL'>('PENDING');
+  const processingActionsRef = useRef<Set<number>>(new Set());
 
   const fetchData = useCallback(async () => {
     try {
@@ -135,7 +149,16 @@ export default function DoctorDashboard() {
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
+  // Auto-refresh when a real-time notification arrives (e.g. new appointment)
+  useEffect(() => {
+    const handler = () => { fetchData(); };
+    window.addEventListener(NOTIFICATION_EVENT, handler);
+    return () => window.removeEventListener(NOTIFICATION_EVENT, handler);
+  }, [fetchData]);
+
   const handleAction = async (id: number, newStatus: 'CONFIRMED' | 'REJECTED') => {
+    if (processingActionsRef.current.has(id)) return;
+    processingActionsRef.current.add(id);
     setActionLoading(id);
     try {
       await api.put(`/appointments/${id}/status`, { status: newStatus });
@@ -147,6 +170,7 @@ export default function DoctorDashboard() {
     } catch (err: any) {
       showToast(err.response?.data?.detail || t('appointments.action_error'), 'error');
     } finally {
+      processingActionsRef.current.delete(id);
       setActionLoading(null);
     }
   };

@@ -18,14 +18,24 @@ class ConsultationFinalize(BaseModel):
 
 
 class ConsultationFinalizeStructured(BaseModel):
-    """Structured consultation finalize with named medical fields."""
-    # Free-text edited transcript (the WYSIWYG content)
+    """Structured consultation finalize with named medical fields.
+    
+    The frontend sends BOTH plaintext (for server-side PDF generation) AND
+    encrypted ciphertext (for secure storage). After generating the PDF,
+    the server clears the plaintext from the DB and keeps only ciphertext.
+    """
+    # Free-text edited transcript (used for PDF generation, then cleared)
     final_revised_text: str
-    # Structured template fields — all optional so plain-text flow still works
+    # Structured template fields
     symptoms: Optional[str] = None
     diagnosis: Optional[str] = None
     recommendations: Optional[str] = None
     prescriptions: Optional[str] = None
+    # E2EE encrypted payload (base64-encoded ciphertext)
+    encrypted_final_text: Optional[str] = None
+    encrypted_structured: Optional[str] = None
+    e2ee_iv_b64: Optional[str] = None
+    e2ee_salt_b64: Optional[str] = None
 
 
 class ExtractTextRequest(BaseModel):

@@ -7,6 +7,11 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import api from '../api';
 import { useToast, SectionCard } from '../components/ui';
+import { useAuth } from '../context/AuthContext';
+import {
+  loadKeyPair, importPublicKey, encryptFile,
+  arrayBufferToBase64,
+} from '../crypto';
 
 /* ── Structured Diagnosis Form ──────────────────────────────────────── */
 interface DiagnosisFormProps {
@@ -66,6 +71,7 @@ function DiagnosisForm({
 export default function AudioConsultation() {
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const { user } = useAuth();
   const [searchParams] = useSearchParams();
   const urlAppointmentId = searchParams.get('appointmentId');
   const urlPatientId     = searchParams.get('patientId');
@@ -78,6 +84,7 @@ export default function AudioConsultation() {
   const [isSaving, setIsSaving] = useState(false);
   const [isFinalized, setIsFinalized] = useState(false);
   const [consultationId, setConsultationId] = useState<number | null>(null);
+  const [patientUserId, setPatientUserId] = useState<number | null>(null);
 
   const [symptoms,        setSymptoms]        = useState('');
   const [diagnosis,       setDiagnosis]       = useState('');
@@ -113,6 +120,7 @@ export default function AudioConsultation() {
 
   const handleTranscriptionResponse = (data: any) => {
     setConsultationId(data.consultation_id);
+    setPatientUserId(data.patient_user_id ?? null);
     setTranscriptHtml(
       data.result.text_format_html ||
       `<p style="color:#999;font-style:italic">[${t('consultation.empty_transcript')}]</p>`
@@ -201,12 +209,55 @@ export default function AudioConsultation() {
     if (!consultationId || !editorRef.current) return;
     setIsSaving(true);
     try {
+      // ── E2EE: Encrypt before sending ────────────────────────────────
+      let encryptedPayload: {
+        encrypted_final_text?: string;
+        encrypted_structured?: string;
+        e2ee_iv_b64?: string;
+        e2ee_salt_b64?: string;
+      } = {};
+
+      if (user && patientUserId) {
+        try {
+          // Load doctor's key pair from IndexedDB
+          const keyPair = await loadKeyPair(user.id);
+          if (keyPair) {
+            // Fetch patient's public key from server
+            const pubKeyRes = await api.get(`/e2ee/public-key/${patientUserId}`);
+            const patientPubKey = await importPublicKey(pubKeyRes.data.public_key_jwk);
+
+            // Combine all sensitive data into a single JSON blob
+            const combinedPayload = JSON.stringify({
+              final_text: editorRef.current.innerText,
+              structured: { symptoms, diagnosis, recommendations, prescriptions },
+            });
+            const payloadBytes = new TextEncoder().encode(combinedPayload);
+
+            // Single encryption — one IV, one salt, one ciphertext
+            const encrypted = await encryptFile(
+              payloadBytes.buffer, keyPair.privateKey, patientPubKey
+            );
+
+            encryptedPayload = {
+              encrypted_final_text: arrayBufferToBase64(encrypted.ciphertext),
+              e2ee_iv_b64: arrayBufferToBase64(encrypted.iv.buffer),
+              e2ee_salt_b64: arrayBufferToBase64(encrypted.salt.buffer),
+            };
+
+            console.log('[E2EE] Consultation data encrypted successfully.');
+          }
+        } catch (e2eeErr) {
+          console.warn('[E2EE] Encryption failed, saving without E2EE:', e2eeErr);
+        }
+      }
+
       await api.post(`/consultations/${consultationId}/finalize`, {
         final_revised_text: editorRef.current.innerText,
         symptoms,
         diagnosis,
         recommendations,
         prescriptions,
+        ...encryptedPayload,
       });
       setIsFinalized(true);
       showToast(t('consultation.finalized_title'), 'success');

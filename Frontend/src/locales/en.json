@@ -302,7 +302,11 @@
     "success_picture": "Profile picture updated!",
     "success_save": "Profile saved successfully!",
     "error_save": "Error saving profile.",
-    "error_load": "Could not load profile.",
     "required_marker": "*"
+  },
+  "notifications": {
+    "title": "Notifications",
+    "mark_all_read": "Read all",
+    "empty": "No notifications yet."
   }
 }

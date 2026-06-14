@@ -1,12 +1,17 @@
 import React, { useEffect, useState, useRef } from 'react';
 import {
   FileText, ArrowLeft, Edit3, Download, CheckCircle, Clock,
-  Save, Loader2, User, XCircle, RefreshCw, ChevronDown, ChevronUp
+  Save, Loader2, User, XCircle, RefreshCw, ChevronDown, ChevronUp, ShieldCheck
 } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import api from '../api';
 import { useToast, StatusBadge, SectionCard, Spinner } from '../components/ui';
+import { useAuth } from '../context/AuthContext';
+import {
+  loadKeyPair, importPublicKey, decryptFile, encryptFile,
+  base64ToArrayBuffer, base64ToUint8Array, arrayBufferToBase64,
+} from '../crypto';
 
 /* ── Structured fields section inside the edit modal ─────────────── */
 interface StructuredFieldsProps {
@@ -100,9 +105,40 @@ function EditModal({ consultation, onClose, onSaved }: EditModalProps) {
     if (!editorRef.current) return;
     setSaving(true);
     try {
+      // E2EE: Re-encrypt before saving
+      let encryptedPayload: Record<string, string> = {};
+      if (consultation.patient_user_id && consultation.e2ee_sender_user_id) {
+        try {
+          const auth = (window as any).__AUTH_USER__;
+          if (auth) {
+            const keyPair = await loadKeyPair(auth.id);
+            if (keyPair) {
+              const pubKeyRes = await api.get(`/e2ee/public-key/${consultation.patient_user_id}`);
+              const patientPubKey = await importPublicKey(pubKeyRes.data.public_key_jwk);
+
+              const combinedPayload = JSON.stringify({
+                final_text: editorRef.current.innerText,
+                structured: { symptoms, diagnosis, recommendations, prescriptions },
+              });
+              const payloadBytes = new TextEncoder().encode(combinedPayload);
+              const encrypted = await encryptFile(payloadBytes.buffer, keyPair.privateKey, patientPubKey);
+
+              encryptedPayload = {
+                encrypted_final_text: arrayBufferToBase64(encrypted.ciphertext),
+                e2ee_iv_b64: arrayBufferToBase64(encrypted.iv.buffer),
+                e2ee_salt_b64: arrayBufferToBase64(encrypted.salt.buffer),
+              };
+            }
+          }
+        } catch (e2eeErr) {
+          console.warn('[E2EE] Re-encryption failed, saving without E2EE:', e2eeErr);
+        }
+      }
+
       const res = await api.put(`/consultations/${consultation.id}/update`, {
         final_revised_text: editorRef.current.innerText,
         symptoms, diagnosis, recommendations, prescriptions,
+        ...encryptedPayload,
       });
       showToast(t('consultation.save_success'), 'success');
       setTimeout(() => {
@@ -111,6 +147,10 @@ function EditModal({ consultation, onClose, onSaved }: EditModalProps) {
           final_revised_text: editorRef.current?.innerText,
           status: 'SIGNED',
           pdf_report_url: res.data.pdf_url,
+          // Mark as decrypted since we just saved
+          _decrypted: true,
+          _decrypted_text: editorRef.current?.innerText,
+          _decrypted_structured: { symptoms, diagnosis, recommendations, prescriptions },
         });
         onClose();
       }, 1200);
@@ -200,16 +240,69 @@ function EditModal({ consultation, onClose, onSaved }: EditModalProps) {
 export default function DoctorConsultations() {
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const { user } = useAuth();
   const [consultations, setConsultations] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [editTarget, setEditTarget] = useState<any>(null);
   const { show: showToast, ToastNode } = useToast();
   const [filter, setFilter] = useState<'ALL' | 'DRAFT' | 'SIGNED'>('ALL');
 
+  // Expose user for EditModal E2EE re-encryption
+  useEffect(() => {
+    if (user) (window as any).__AUTH_USER__ = user;
+    return () => { delete (window as any).__AUTH_USER__; };
+  }, [user]);
+
+  /**
+   * Decrypt a single E2EE-encrypted consultation using the doctor's private key.
+   */
+  const decryptConsultation = async (c: any): Promise<any> => {
+    if (!c.encrypted_final_text || !c.e2ee_iv_b64 || !c.e2ee_salt_b64 || !user) return c;
+    if (c._decrypted) return c; // already decrypted
+
+    try {
+      const keyPair = await loadKeyPair(user.id);
+      if (!keyPair) return c;
+
+      // Doctor was the sender — use patient's public key for ECDH
+      const patientUserId = c.patient_user_id;
+      if (!patientUserId) return c;
+
+      const pubKeyRes = await api.get(`/e2ee/public-key/${patientUserId}`);
+      const patientPubKey = await importPublicKey(pubKeyRes.data.public_key_jwk);
+
+      const iv = base64ToUint8Array(c.e2ee_iv_b64);
+      const salt = base64ToUint8Array(c.e2ee_salt_b64);
+
+      // Decrypt the single combined blob
+      const ciphertext = base64ToArrayBuffer(c.encrypted_final_text);
+      const decryptedRaw = await decryptFile(ciphertext, iv, salt, keyPair.privateKey, patientPubKey);
+      const combined = JSON.parse(new TextDecoder().decode(decryptedRaw));
+
+      return {
+        ...c,
+        _decrypted: true,
+        final_revised_text: combined.final_text || '',
+        text_format_html: (combined.final_text || '').replace(/\n/g, '<br>'),
+        mixed_score_metadata: {
+          ...(c.mixed_score_metadata || {}),
+          structured_fields: combined.structured || {},
+        },
+      };
+    } catch (err) {
+      console.warn(`[E2EE] Failed to decrypt consultation ${c.id}:`, err);
+      return { ...c, _decrypted: false };
+    }
+  };
+
   const fetchConsultations = async () => {
     try {
       const res = await api.get('/consultations/doctor-history');
-      setConsultations(Array.isArray(res.data) ? res.data : []);
+      const raw = Array.isArray(res.data) ? res.data : [];
+
+      // Decrypt any E2EE-encrypted consultations
+      const decrypted = await Promise.all(raw.map(decryptConsultation));
+      setConsultations(decrypted);
     } catch (err) {
       console.error(err);
     } finally {

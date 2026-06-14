@@ -37,22 +37,10 @@ const NAV_ITEMS: NavItem[] = [
     roles: ['PATIENT', 'DOCTOR', 'ADMIN'],
   },
   {
-    to: '/ehealth/find-doctors',
-    icon: Search,
-    label: 'nav.find_doctors',
-    roles: ['PATIENT'],
-  },
-  {
     to: '/ehealth/appointments',
     icon: CalendarDays,
     label: 'nav.book_appointment',
     roles: ['PATIENT'],
-  },
-  {
-    to: '/ehealth/appointments',
-    icon: ClipboardList,
-    label: 'nav.appointments_manage',
-    roles: ['DOCTOR'],
   },
   {
     to: '/ehealth/consultation',

@@ -235,3 +235,12 @@ async def google_callback(request: Request, db: Session = Depends(get_db)):
 @router.get("/me", response_model=UserResponse)
 def get_me(current_user: User = Depends(get_current_user)):
     return current_user
+
+@router.get("/ws-token")
+def get_ws_token(request: Request, current_user: User = Depends(get_current_user)):
+    """Retrieve the access token for use in cross-origin WebSockets."""
+    token = request.cookies.get("access_token")
+    if not token:
+        # Fallback: regenerate a fresh token if the cookie isn't directly readable
+        token = create_access_token(data={"sub": current_user.email, "role": current_user.role})
+    return {"token": token}

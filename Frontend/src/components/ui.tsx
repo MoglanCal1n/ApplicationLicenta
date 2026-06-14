@@ -6,6 +6,7 @@
  * Updated for the new design system with CSS custom properties.
  */
 import React, { useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { CheckCircle, XCircle, AlertCircle, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 
@@ -18,9 +19,11 @@ interface ToastProps {
   onClose: () => void;
   /** Auto-dismiss delay in ms. Default 5000. */
   duration?: number;
+  /** If false, renders inline without createPortal. Default true for backward compat. */
+  portal?: boolean;
 }
 
-export function Toast({ message, type, onClose, duration = 5000 }: ToastProps) {
+function ToastContent({ message, type, onClose, duration = 5000 }: Omit<ToastProps, 'portal'>) {
   useEffect(() => {
     const timer = setTimeout(onClose, duration);
     return () => clearTimeout(timer);
@@ -51,10 +54,11 @@ export function Toast({ message, type, onClose, duration = 5000 }: ToastProps) {
     <div
       role="alert"
       aria-live="assertive"
-      className="fixed top-6 right-6 z-50 flex items-start gap-3 px-5 py-4 rounded-xl text-sm font-medium max-w-sm animate-slide-in-right"
+      className="flex items-start gap-3 px-5 py-4 rounded-xl text-sm font-medium max-w-sm animate-slide-in-right border"
       style={{
         backgroundColor: s.bg,
         borderLeft: `4px solid ${s.border}`,
+        borderColor: 'var(--color-border)',
         color: s.text,
         boxShadow: 'var(--shadow-dropdown)',
       }}
@@ -64,11 +68,25 @@ export function Toast({ message, type, onClose, duration = 5000 }: ToastProps) {
       <button
         onClick={onClose}
         aria-label="Close notification"
-        className="opacity-60 hover:opacity-100 transition-opacity text-xl leading-none ml-1"
+        className="opacity-60 hover:opacity-100 transition-opacity text-xl leading-none ml-1 font-bold"
+        style={{ color: 'var(--color-text-secondary)' }}
       >
         &times;
       </button>
     </div>
+  );
+}
+
+export function Toast({ portal = true, ...props }: ToastProps) {
+  if (!portal) {
+    return <ToastContent {...props} />;
+  }
+
+  return createPortal(
+    <div className="fixed top-[88px] right-6 z-[99999]">
+      <ToastContent {...props} />
+    </div>,
+    document.body
   );
 }
 

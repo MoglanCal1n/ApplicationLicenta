@@ -1,0 +1,485 @@
+\chapter{Integrarea modelului de inteligență artificială în cadrul aplicației}
+\label{chap:ch4}
+
+Acest capitol prezintă tranziția de la cercetarea pur teoretică a modelelor acustice și a procesării de limbaj natural la implementarea practică a unui produs software utilizabil în mod real în mediul clinic. Principalul obiectiv pe care l-am urmărit a fost „împachetarea” algoritmului hibrid dezvoltat în capitolele anterioare (Whisper + MFCC) într-o arhitectură stabilă, securizată și integrată nativ într-o platformă de tip E-Health, concepută pentru a deservi eficient atât personalul medical (Medici), cât și beneficiarii direcți (Pacienți).
+
+\section{Specificarea Aplicației}
+\label{sec:ch4sec1}
+
+Din punct de vedere conceptual, am proiectat aplicația având la bază paradigma \textit{Human-in-the-Loop} (HITL). Această decizie arhitecturală a venit ca răspuns direct la limitările actuale ale sistemelor bazate pe inteligență artificială în medicină (pe care le-am analizat în Capitolul \ref{chap:ch1}), unde algoritmii nu pot fi lăsați să ia decizii clinice finale nesupravegheate din motive de siguranță a pacientului și responsabilitate legală. Prin urmare, sistemul hibrid funcționează strict ca un asistent digital inteligent care preia dictări și redactează documente preliminare (\textit{draft-uri}), responsabilitatea validării, corectării și semnării raportului medical revenind exclusiv medicului specialist. 
+
+Pentru a structura riguros cazurile de utilizare și a oferi o trasabilitate clară a fluxurilor de sistem, am împărțit specificația aplicației în trei diagrame distincte ale cazurilor de utilizare (\textit{Use Case Diagrams}), corespunzătoare celor trei roluri principale din sistem:
+
+1. \textbf{Diagrama Cazurilor de Utilizare pentru Pacient} (Figura \ref{fig:use_case_patient}): reflectă fluxul de rezervare a programărilor și gestiunea dosarului medical personal.
+2. \textbf{Diagrama Cazurilor de Utilizare pentru Medic} (Figura \ref{fig:use_case_doctor}): ilustrează procesul clinic \textit{Human-in-the-Loop} de înregistrare, corecție pe bază de \textit{Scor Mixt} (HITL) și finalizare prin securizare E2EE.
+3. \textbf{Diagrama Cazurilor de Utilizare pentru Administrator} (Figura \ref{fig:use_case_admin}): redă procesele de gestiune a resurselor globale ale platformei și editarea administrativă tehnică.
+
+\begin{figure}[H]
+    \centering
+    \color{red}\framebox[\textwidth]{\parbox{\textwidth}{\centering \vskip 1.5cm \textbf{[fig:use\_case\_patient]} \\ Diagrama cazurilor de utilizare pentru modulul Pacient (rezervare, vizualizare medici disponibili, dosar medical personal). \vskip 1.5cm}}
+    \caption{Diagrama cazurilor de utilizare pentru Pacient.}
+    \label{fig:use_case_patient}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \color{red}\framebox[\textwidth]{\parbox{\textwidth}{\centering \vskip 1.5cm \textbf{[fig:use\_case\_doctor]} \\ Diagrama cazurilor de utilizare pentru modulul Medic (înregistrare audio, corecție acustică HITL, finalizare și criptare E2EE). \vskip 1.5cm}}
+    \caption{Diagrama cazurilor de utilizare pentru Medic.}
+    \label{fig:use_case_doctor}
+\end{figure}
+
+\begin{figure}[H]
+    \centering
+    \color{red}\framebox[\textwidth]{\parbox{\textwidth}{\centering \vskip 1.5cm \textbf{[fig:use\_case\_admin]} \\ Diagrama cazurilor de utilizare pentru modulul Administrator (management roluri, dashboard admin, add/edit administrative). \vskip 1.5cm}}
+    \caption{Diagrama cazurilor de utilizare pentru Administrator.}
+    \label{fig:use_case_admin}
+\end{figure}
+
+\subsection{Cerințe funcționale}
+Am divizat cerințele funcționale ale sistemului în funcție de rolul principal al actorului care interacționează cu platforma:
+
+\textbf{Modulul dedicat Pacientului:}
+\begin{itemize}
+    \item \textbf{CF1. Gestiunea Dosarului Medical Personal:} Pacientul își poate completa și actualiza profilul medical, incluzând alergii cunoscute, tratamente curente, CNP și alte detalii administrative.
+    \item \textbf{CF2. Programări (Scheduling):} Pacientul are capacitatea de a vizualiza medicii disponibili și de a solicita o programare în funcție de intervalele orare libere ale acestora, având posibilitatea de a adăuga o scurtă descriere în scris a simptomelor sale.
+    \item \textbf{CF3. Vizualizarea rapoartelor medicale:} Pacientul poate accesa, vizualiza și descărca rapoartele medicale în format PDF, imediat după ce acestea au fost finalizate de medic.
+\end{itemize}
+
+\textbf{Modulul dedicat Medicului:}
+\begin{itemize}
+    \item \textbf{CF4. Gestiunea listei de pacienți:} Medicul își vizualizează agenda zilnică și poate accesa istoricul sau fișa medicală a pacienților programați (inclusiv alergiile și tratamentele curente ale acestora).
+    \item \textbf{CF5. Înregistrarea consultației în timp real:} Interfața oferă suport pentru înregistrarea audio direct din browser a dictării realizate de medic în timpul consultului.
+    \item \textbf{CF6. Procesare AI și Editor WYSIWYG:} Fișierul audio este trimis asincron către backend, procesat de modelul hibrid, iar textul rezultat este formatat și afișat într-un editor interactiv, evidențiind termenii critici corectați pe baza \textit{Scorului Mixt}.
+    \item \textbf{CF7. Validare, Semnare și Criptare:} Medicul revizuiește textul, modifică eventualele greșeli manual și semnează raportul. Acest pas generează PDF-ul finalizat și activează mecanismul de criptare End-to-End, blocând raportul în modul \textit{Read-Only}.
+\end{itemize}
+
+\textbf{Modulul dedicat Administratorului:}
+\begin{itemize}
+    \item \textbf{CF8. Panoul de Control Global (Admin Dashboard):} Administratorul poate vizualiza dintr-un singur ecran starea nodurilor active de rețea, statistici sintetice referitoare la utilizatori și datele globale ale bazei de date.
+    \item \textbf{CF9. Managementul Utilizatorilor și Gestiunea Rolurilor:} Permite vizualizarea tabelară a tuturor conturilor înregistrate și modificarea directă a permisiunilor (alocarea granulară a rolurilor: \texttt{PATIENT}, \texttt{DOCTOR}, \texttt{ADMIN}).
+    \item \textbf{CF10. Înregistrare forțată (Add User):} Permite adăugarea rapidă a unor conturi direct din panou (pentru medici noi sau personal administrativ).
+    \item \textbf{CF11. Editare și Anulare administrativă (Edit Consultation / Appointment):} Oferă instrumente tehnice pentru modificarea manuală a datelor asociate programărilor active sau corectarea consultațiilor în cazuri excepționale de mentenanță.
+\end{itemize}
+
+\subsection{Cerințe non-funcționale}
+\begin{itemize}
+    \item \textbf{CNF1. Securitate strictă și conformitate GDPR:} Protecția datelor cu caracter medical este critică. Toate conexiunile sunt securizate prin protocoale criptografice (HTTPS/WSS), autentificarea se realizează prin token-uri JWT (stocate în cookie-uri securizate de tip \textit{HttpOnly}), iar datele sensibile de diagnostic sunt stocate criptat prin chei derivate client-side.
+    \item \textbf{CNF2. Decuplare Arhitecturală (Single Page Application):} Frontend-ul (React cu TypeScript) și Backend-ul (FastAPI) sunt complet independente și comunică exclusiv prin intermediul unui API RESTful securizat și al canalelor WebSocket.
+    \item \textbf{CNF3. Procesare Asincronă și Scalabilitate:} Deoarece rularea modelelor de rețele neuronale (Whisper) este intensivă din punct de vedere computațional, procesarea audio se realizează asincron, interfața web rămânând responsivă.
+\end{itemize}
+
+\section{Proiectarea Aplicației}
+\label{sec:ch3sec2}
+
+Pentru a transpune aceste cerințe într-un sistem software scalabil, am adoptat o arhitectură stratificată (Layered Architecture). Acest stil arhitectural asigură separarea preocupărilor (Separation of Concerns), decuplând interfața grafică de logica computațională a inteligenței artificiale și de mecanismele de persistență a datelor.
+
+\subsection{Arhitectura de Sistem}
+Platforma este structurată pe trei niveluri principale:
+\begin{enumerate}
+    \item \textbf{Stratul de Prezentare (Frontend Web):} Construit ca o aplicație SPA modernă folosind framework-ul React și TypeScript. Acest strat capturează fluxul audio de la microfon utilizând \texttt{MediaRecorder API}, permite utilizarea editorului de text bogat (WYSIWYG) și implementează întreaga logică de criptare și decriptare client-side (folosind Web Crypto API).
+    \item \textbf{Stratul de Logică și API (Backend):} Dezvoltat în limbajul Python prin intermediul framework-ului FastAPI. Acest strat expune API-ul REST securizat și coordonează logica sistemului: procesarea semnalului audio (modelul Whisper rulat local/containerizat), apelarea LLM-ului local (Ollama/Phi-3) pentru corecții gramaticale și extragerea simptomelor, gestiunea notificărilor în timp real prin WebSocket și generarea rapoartelor PDF securizate.
+    \item \textbf{Stratul de Persistență a Datelor (Baza de Date):} Folosește motorul relațional PostgreSQL. Gestiunea tabelelor și a relațiilor este realizată programmatic prin intermediul ORM-ului SQLAlchemy.
+\end{enumerate}
+
+\subsection{Modelul Datelor (Diagrama de Clase)}
+O componentă cheie a designului de sistem a fost proiectarea unei scheme de bază de date normalizate, capabilă să stocheze în siguranță relațiile dintre utilizatori, profilele acestora și consultațiile medicale. Diagrama de clase ORM este reprezentată în Figura \ref{fig:class_diagram}.
+
+\begin{figure}[H]
+    \centering
+    \color{red}\framebox[0.8\textwidth]{\parbox{0.8\textwidth}{\centering \vskip 1.5cm \textbf{[fig:class\_diagram]} \\ Diagrama de clase a sistemului E-Health, evidențiind structura profilelor utilizatorilor, a programărilor și relațiile simplificate (1:1, 1:N). \vskip 1.5cm}}
+    \caption{Diagrama de clase a sistemului E-Health.}
+    \label{fig:class_diagram}
+\end{figure}
+
+Am normalizat datele separând identitatea contului de rolul specific deținut:
+\begin{itemize}
+    \item \textbf{Clasa \texttt{User}:} Reprezintă utilizatorul generic din punct de vedere al autentificării (email, parolă hash, cheie publică E2EE) și definește rolul acestuia (\texttt{PATIENT}, \texttt{DOCTOR}, \texttt{ADMIN}).
+    \item \textbf{Clasele \texttt{PatientProfile} și \texttt{DoctorProfile}:} Moștenesc sau sunt legate printr-o relație de tip $1:1$ de clasa \texttt{User}, conținând atribute specifice rolului (CNP, istoric medical, alergii pentru pacient; număr de licență și specializare pentru medic).
+    \item \textbf{Clasa \texttt{Consultation}:} Este inima fluxului medical. Pe lângă reținerea datelor de dictare inițială în clar pentru faza de redactare (\texttt{DRAFT}), această clasă a fost extinsă pentru a include coloanele de criptare: \texttt{encrypted\_final\_text} (blob-ul opac criptat), \texttt{e2ee\_iv\_b64} (vectorul de inițializare) și \texttt{e2ee\_salt\_b64} (sarea utilizată în derivarea cheii).
+\end{itemize}
+
+\section{Implementarea Platformei E-Health și Integrarea AI}
+\label{sec:ch4sec3}
+
+În această secțiune voi detalia implementarea concretă a componentelor software, tehnologiile pe care le-am selectat și modul în care am integrat motorul de inteligență artificială și sistemul criptografic End-to-End (E2EE).
+
+\subsection{Tehnologiile Utilizate}
+Alegerea stivei tehnologice a fost dictată de cerințele de performanță, siguranță și rapiditate în dezvoltare:
+\begin{itemize}
+    \item \textbf{Python și FastAPI (Backend):} Am optat pentru FastAPI datorită suportului nativ pentru programare asincronă (\texttt{async/await}), validarea automată a datelor prin scheme Pydantic și generarea documentației OpenAPI interactive.
+    \item \textbf{React, TypeScript și Vite (Frontend):} TypeScript asigură un cod robust și reduce erorile la compilare, în timp ce Vite oferă un mediu de dezvoltare extrem de rapid.
+    \item \textbf{Docker și Docker Compose (DevOps):} Am containerizat întreaga stivă software (baza de date PostgreSQL, API-ul FastAPI, Frontend-ul în Node, instanța locală de Ollama) pentru a asigura un mediu de rulare izolat, portabil și ușor de reprodus pe orice mașină.
+    \item \textbf{Ollama și Phi-3 (Corecție și Structurare):} Am rulat local un container cu Ollama și modelul Phi-3 (3.8B parametri) pentru a automatiza rafinarea textului transcris de Whisper și pentru a extrage simptomele direct pe server, fără a trimite datele în cloud extern.
+\end{itemize}
+
+\subsection{Mecanismul E2EE (Criptare End-to-End client-side)}
+Sistemul E2EE dezvoltat asigură confidențialitatea completă a raportului medical final. Cheia privată a medicului sau pacientului nu părăsește niciodată browserul. 
+Am implementat algoritmul după următorul flux criptografic:
+1. Generarea perechii de chei eliptice ECDH (curba P-256) și înregistrarea cheii publice (JWK) pe server.
+2. Derivarea unui secret partajat unic prin acordul de chei ECDH la finalizare.
+3. Trecerea secretului partajat printr-o funcție de derivare a cheilor bazată pe extract-and-expand (HKDF-SHA256) împreună cu o sare unică generată aleator.
+4. Criptarea simetrică a textului și a câmpurilor structurate într-un singur blob JSON compact prin algoritmul AES-256-GCM.
+
+Codul următor (Listarea \ref{lst:crypto_ts}) reprezintă implementarea nucleului criptografic în TypeScript utilizând API-ul nativ \texttt{window.crypto.subtle}:
+
+\begin{lstlisting}[language=JavaScript, caption={Funcția de derivare a cheii simetrice în frontend folosind standardele ECDH și HKDF-SHA256.}, label=lst:crypto_ts]
+// Derivare cheie simetrica AES-256-GCM prin ECDH si HKDF-SHA256
+export async function deriveSharedKey(
+  privateKey: CryptoKey,
+  publicKey: CryptoKey,
+  salt: Uint8Array
+): Promise<CryptoKey> {
+  const sharedBits = await window.crypto.subtle.deriveBits(
+    { name: 'ECDH', public: publicKey },
+    privateKey,
+    256
+  );
+
+  const hkdfKey = await window.crypto.subtle.importKey(
+    'raw', sharedBits, 'HKDF', false, ['deriveKey']
+  );
+
+  return window.crypto.subtle.deriveKey(
+    {
+      name: 'HKDF',
+      hash: 'SHA-256',
+      salt: salt,
+      info: new TextEncoder().encode('ehealth-e2ee-v1')
+    },
+    hkdfKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt', 'decrypt']
+  );
+}
+\end{lstlisting}
+
+La nivel de backend, odată ce documentul devine semnat (\texttt{SIGNED}), serverul salvează PDF-ul generat anterior (folosit pentru printare fizică) și persistă blocul opac de bytes criptați. Din motive de conformitate GDPR și securitate, serverul \textbf{șterge în mod activ toate urmele de text clar} din baza de date. 
+
+Listarea \ref{lst:backend_router} arată logica de stocare asimetrică și curățare a bazei de date pe care am implementat-o în endpoint-ul de finalizare din FastAPI:
+
+\begin{lstlisting}[language=Python, caption={Metoda din FastAPI responsabilă cu persistarea blocurilor criptate și golirea câmpurilor în clar.}, label=lst:backend_router]
+# Endpoint-ul de finalizare a consultatiei din Backend (FastAPI)
+@router.post("/{consultation_id}/finalize")
+async def finalize_consultation(
+    consultation_id: int,
+    data: ConsultationFinalizeStructured,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db)
+):
+    # Logica de generare a PDF-ului din datele primite in clar ...
+    # ...
+    
+    # Aplicarea mecanismului E2EE si curatarea datelor necriptate din DB
+    if data.encrypted_final_text and data.e2ee_iv_b64 and data.e2ee_salt_b64:
+        consultation.encrypted_final_text = data.encrypted_final_text
+        consultation.e2ee_iv_b64 = data.e2ee_iv_b64
+        consultation.e2ee_salt_b64 = data.e2ee_salt_b64
+        consultation.e2ee_sender_user_id = current_user.id
+
+        # Ștergerea definitivă a textului în clar pentru conformitate GDPR
+        consultation.final_revised_text = None
+        consultation.ai_draft_transcript = None
+        consultation.mixed_score_metadata = None
+
+    db.commit()
+    return {"message": "Consultation finalized and secured successfully."}
+\end{lstlisting}
+
+\subsection{Notificări în timp real prin WebSocket}
+Pentru a asigura o experiență de utilizare interactivă, am implementat un manager de conexiuni asincrone WebSocket în Python. Atunci când medicul semnează raportul medical, pacientul conectat la platformă primește instant o notificare vizuală de tip \textit{toast}, fără a fi necesară reîncărcarea paginii (polling).
+
+Listarea \ref{lst:ws_manager} prezintă managerul de conexiuni WebSocket de pe backend:
+
+\begin{lstlisting}[language=Python, caption={Managerul de conexiuni asincrone WebSocket responsabil cu trimiterea notificărilor instantanee.}, label=lst:ws_manager]
+class ConnectionManager:
+    def __init__(self):
+        self.active_connections: dict[int, list[WebSocket]] = {}
+
+    async def connect(self, user_id: int, websocket: WebSocket):
+        await websocket.accept()
+        if user_id not in self.active_connections:
+            self.active_connections[user_id] = []
+        self.active_connections[user_id].append(websocket)
+
+    def disconnect(self, user_id: int, websocket: WebSocket):
+        if user_id in self.active_connections:
+            self.active_connections[user_id].remove(websocket)
+
+    async def send_personal_message(self, message: str, user_id: int):
+        if user_id in self.active_connections:
+            for connection in self.active_connections[user_id]:
+                await connection.send_text(message)
+\end{lstlisting}
+
+---
+
+\section{Testarea Sistemului și Validarea E2EE}
+\label{sec:ch4sec4}
+
+Pentru a garanta corectitudinea implementării și robustețea securității, am urmat o strategie riguroasă de testare împărțită pe trei piloni principali: testarea automată a API-ului de backend, testarea unitară a motorului criptografic în browser și validarea manuală a fluxului cap-la-cap.
+
+\subsection{Testarea Automată a Backend-ului (Pytest)}
+Am dezvoltat o suită cuprinzătoare de \textbf{69 de teste automate} utilizând framework-ul \texttt{pytest} și biblioteca \texttt{httpx.ASGITransport} pentru a simula request-urile către FastAPI fără a fi necesară pornirea fizică a serverului web în timpul rulării testelor. 
+
+Testele acoperă:
+\begin{itemize}
+    \item Autentificarea utilizatorilor și verificarea corectitudinii token-urilor JWT expuse.
+    \item Drepturile de acces (Access Control): verificarea că un pacient nu poate descărca cheia publică a unui alt pacient dacă nu există o consultație comună aprobată.
+    \item Finalizarea consultațiilor și generarea asincronă a rapoartelor PDF.
+    \item Trimiterea corectă a notificărilor prin conexiunile active de tip WebSocket.
+\end{itemize}
+
+Toate cele 69 de teste unitare și de integrare au trecut cu succes, validând stabilitatea logică a modulelor noastre:
+
+\begin{verbatim}
+======================== 69 passed in 238.81s (0:03:58) ========================
+\end{verbatim}
+
+\subsection{Testarea Automată a Modulului Criptografic (e2ee-test.html)}
+Deoarece algoritmul de criptare se execută exclusiv în browser-ul utilizatorului utilizând cheile de tip \texttt{CryptoKey} non-extractabile din IndexedDB, am creat o suită de testare dedicată în limbajul HTML/JavaScript, localizată în \texttt{Frontend/e2ee-test.html}. 
+
+Această pagină încarcă și rulează direct în motorul JS al browser-ului \textbf{20 de teste unitare criptografice avansate}, printre care:
+\begin{enumerate}
+    \item \textbf{Test 1 \& 2}: Generarea corectă a perechilor de chei ECDH P-256 și exportul acestora în format JWK (verificând că cheia privată "d" nu se scurge niciodată în structura exportată).
+    \item \textbf{Test 5}: Simetria secretului partajat în acordul de chei (Alice(priv) + Bob(pub) = Bob(priv) + Alice(pub)).
+    \item \textbf{Test 7}: Rezistența la fișiere binare de dimensiuni mari (criptarea și decriptarea unui bloc de date aleatoare de 1MB).
+    \item \textbf{Test 10}: Validarea respingerii cheilor greșite (simularea unui atacator de tip Man-in-the-Middle).
+    \item \textbf{Test 11, 12 \& 13}: Verificarea integrității datelor criptate (alterarea artificială a unui singur bit din ciphertext, din vectorul de inițializare sau din salt duce la eșecul instant și sigur al decriptării, datorită protecției AEAD oferite de AES-GCM).
+    \item \textbf{Test 20 (Benchmark)}: Rularea a 100 de operații succesive de criptare și decriptare a unor blocuri de 10KB. Testul a demonstrat o viteză de execuție remarcabilă, media fiind de sub 1.2 ms pe operație, ceea ce confirmă că platforma oferă securitate maximă fără a penaliza în vreun fel experiența fluidă a utilizatorului.
+\end{enumerate}
+
+---
+
+\section{Manualul Utilizatorului și Ghidul de Interfață}
+\label{sec:ch4sec5}
+
+Platforma se distinge printr-o interfață grafică modernă, ce oferă un design cu nuanțe elegante de albastru medical și gri închis (concept premium), cu animații discrete de tip micro-interactions care asigură o experiență de utilizare deosebit de intuitivă. Pentru a asigura o flexibilitate maximă și o adaptabilitate completă la preferințele utilizatorilor, designul integrează elemente responsive, suport multi-limbă și teme personalizate. În continuare, voi prezenta detaliat principalele ecrane ale aplicației, grupate logic în funcție de fluxurile de interacțiune ale actorilor.
+
+\subsection{Procesul de Autentificare și Primii Pași}
+La accesarea platformei, utilizatorii sunt întâmpinați de o pagină de prezentare dinamică (Landing Page) care prezintă succint beneficiile asistentului clinic bazat pe inteligență artificială și securitatea E2EE oferită. Procesul de înregistrare a fost simplificat, fiind integrată și autentificarea modernă printr-un singur clic.
+
+Figura \ref{fig:landing_and_register} prezintă, în paralel, pagina de prezentare (Landing Page) și formularul dedicat înregistrării unui cont nou (Register).
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.49\textwidth}
+        \centering
+        \color{red}\framebox[\textwidth]{\parbox{\textwidth}{\centering \vskip 1.8cm \textbf{[fig:screenshot\_landing]} \\ Pagina de Landing a platformei, prezentând conceptul E-Health și asistentul AI. \vskip 1.8cm}}
+        \caption{Pagina de bun venit (Landing Page).}
+        \label{fig:screenshot_landing}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.49\textwidth}
+        \centering
+        \color{red}\framebox[\textwidth]{\parbox{\textwidth}{\centering \vskip 1.8cm \textbf{[fig:screenshot\_register]} \\ Ecranul de creare cont nou cu validare în timp real a parolelor și selectare rol (Medic / Pacient). \vskip 1.8cm}}
+        \caption{Formularul de Înregistrare (Register).}
+        \label{fig:screenshot_register}
+    \end{subfigure}
+    \caption{Interfețele de pornire și creare cont ale platformei E-Health.}
+    \label{fig:landing_and_register}
+\end{figure}
+
+În plus față de înregistrarea clasică cu adresă de email și parolă, aplicația oferă suport integrat pentru autentificarea unificată Single Sign-On (SSO) prin intermediul Google OAuth. Acest mecanism crește considerabil rata de conversie a utilizatorilor și asigură un grad ridicat de confort la accesare. 
+
+Formularul de conectare cu Google este ilustrat în Figura \ref{fig:screenshot_oauth}.
+
+\begin{figure}[H]
+    \centering
+    \color{red}\framebox[0.7\textwidth]{\parbox{0.7\textwidth}{\centering \vskip 1.8cm \textbf{[fig:screenshot\_oauth]} \\ Fereastra pop-up securizată pentru autentificare rapidă cu serviciul Google OAuth 2.0. \vskip 1.8cm}}
+    \caption{Captură de ecran: Autentificarea rapidă utilizând Google OAuth.}
+    \label{fig:screenshot_oauth}
+\end{figure}
+
+\subsection{Modulul Medicului: Captare Audio, Procesare AI și Istoric}
+Modulul de consultații este elementul central dedicat medicului. Acesta oferă două modalități distincte de introducere a semnalului vocal (input): înregistrarea directă prin microfon în timpul consultului fizic sau încărcarea unui fișier audio pre-înregistrat (de exemplu, dictări salvate anterior pe un reportofon digital).
+
+Figura \ref{fig:audio_inputs} evidențiază aceste două moduri de captare a semnalului.
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.49\textwidth}
+        \centering
+        \color{red}\framebox[\textwidth]{\parbox{\textwidth}{\centering \vskip 1.8cm \textbf{[fig:screenshot\_input\_mic]} \\ Interfața cu osciloscop în timp real pentru înregistrarea directă prin microfon. \vskip 1.8cm}}
+        \caption{Captare în timp real prin microfon.}
+        \label{fig:screenshot_input_mic}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.49\textwidth}
+        \centering
+        \color{red}\framebox[\textwidth]{\parbox{\textwidth}{\centering \vskip 1.8cm \textbf{[fig:screenshot\_input\_file]} \\ Zona drag-and-drop pentru încărcarea directă a fișierelor audio (WAV, MP3). \vskip 1.8cm}}
+        \caption{Încărcare fișier audio de pe disc.}
+        \label{fig:screenshot_input_file}
+    \end{subfigure}
+    \caption{Diferitele modalități de introducere a semnalului audio în modulul clinicii.}
+    \label{fig:audio_inputs}
+\end{figure}
+
+Odată ce semnalul audio a fost introdus, aplicația intră în stadiul de procesare asincronă, afișând un indicator vizual dinamic (\textit{Spinner / Processing state}). După finalizarea inferenței pe modelul hibrid Whisper + MFCC, textul rezultat este populat automat în editorul WYSIWYG, fiind marcate cu roșu cuvintele corectate acustic pe baza \textit{Scorului Mixt}, iar în panoul lateral sunt afișate simptomele, diagnosticul și prescripțiile extrase în mod autonom de modelul local de limbaj Ollama (Phi-3).
+
+Figura \ref{fig:transcription_flow} ilustrează această tranziție de la procesarea brută la rezultatul clinic structurat final.
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.49\textwidth}
+        \centering
+        \color{red}\framebox[\textwidth]{\parbox{\textwidth}{\centering \vskip 1.8cm \textbf{[fig:screenshot\_transcribing]} \\ Ecranul de așteptare cu indicator dinamic de progres asincron în timpul transcrierii audio. \vskip 1.8cm}}
+        \caption{Momentul procesării și transcrierii AI.}
+        \label{fig:screenshot_transcribing}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.49\textwidth}
+        \centering
+        \color{red}\framebox[\textwidth]{\parbox{\textwidth}{\centering \vskip 1.8cm \textbf{[fig:screenshot\_transcription\_output]} \\ Textul final afișat în editor cu corecturi evidențiate și casetele de diagnostic extrase de Ollama. \vskip 1.8cm}}
+        \caption{Output-ul procesării acustice și LLM.}
+        \label{fig:screenshot_transcription_output}
+    \end{subfigure}
+    \caption{Fluxul complet de transcriere clinică: de la procesarea asincronă la editare și structurare.}
+    \label{fig:transcription_flow}
+\end{figure}
+
+Medicul are la dispoziție o pagină centralizată de istoric clinic („My Consultations”) unde poate naviga rapid printre toate fișele medicale completate sau aflate în stadiu de ciornă. Această tabelă permite căutarea pacienților, filtrarea consultațiilor după statusul acestora (\texttt{DRAFT} / \texttt{SIGNED}) și oferă statistici rapide referitoare la volumul de activitate clinică desfășurată.
+
+Ecranul cu istoricul consultațiilor medicului este redat în Figura \ref{fig:screenshot_doctor_consultations}.
+
+\begin{figure}[H]
+    \centering
+    \color{red}\framebox[0.85\textwidth]{\parbox{0.85\textwidth}{\centering \vskip 1.8cm \textbf{[fig:screenshot\_doctor\_consultations]} \\ Istoricul complet al consultațiilor medicului, incluzând filtre de stare și carduri statistice. \vskip 1.8cm}}
+    \caption{Captură de ecran: Secțiunea „My Consultations” a medicului.}
+    \label{fig:screenshot_doctor_consultations}
+\end{figure}
+
+\subsection{Modulul Pacientului: Programarea Consultațiilor în Trei Pași}
+Pentru pacienți, principalul caz de utilizare este stabilirea unei noi vizite la medic. Am proiectat acest flux de programare (Book Consultation) sub forma unui asistent ghidat format din \textbf{trei pași distincți}, pentru a minimiza efortul cognitiv al utilizatorului și a asigura colectarea completă a datelor pre-clinice.
+
+Cele trei etape ale asistentului de programare sunt prezentate side-by-side în Figura \ref{fig:book_consultation_steps}.
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.32\textwidth}
+        \centering
+        \color{red}\framebox[\textwidth]{\parbox{\textwidth}{\centering \vskip 1.5cm \textbf{[fig:book\_step1]} \\ Pasul 1: Selectarea specializării și alegerea medicului disponibil. \vskip 1.5cm}}
+        \caption{Pasul 1: Medicul.}
+        \label{fig:book_step1}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.32\textwidth}
+        \centering
+        \color{red}\framebox[\textwidth]{\parbox{\textwidth}{\centering \vskip 1.5cm \textbf{[fig:book\_step2]} \\ Pasul 2: Alegerea datei din calendar și a slotului orar liber. \vskip 1.5cm}}
+        \caption{Pasul 2: Data și Ora.}
+        \label{fig:book_step2}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.32\textwidth}
+        \centering
+        \color{red}\framebox[\textwidth]{\parbox{\textwidth}{\centering \vskip 1.5cm \textbf{[fig:book\_step3]} \\ Pasul 3: Descrierea în scris a simptomelor pre-consult. \vskip 1.5cm}}
+        \caption{Pasul 3: Simptome.}
+        \label{fig:book_step3}
+    \end{subfigure}
+    \caption{Cele trei etape succesive ale fluxului de programare clinică din perspectiva pacientului.}
+    \label{fig:book_consultation_steps}
+\end{figure}
+
+Dosarul electronic personal este completat de ecranul de profil („My Profile”). Aici, pacientul sau medicul își pot edita datele personale de identificare, CNP-ul, istoricul alergenilor și medicația de fond curentă.
+
+Formularul de editare a profilului personal este reprezentat în Figura \ref{fig:screenshot_my_profile}.
+
+\begin{figure}[H]
+    \centering
+    \color{red}\framebox[0.75\textwidth]{\parbox{0.75\textwidth}{\centering \vskip 1.8cm \textbf{[fig:screenshot\_my\_profile]} \\ Panoul de actualizare a datelor de profil, alergiilor cunoscute și medicației curente a pacientului. \vskip 1.8cm}}
+    \caption{Captură de ecran: Editarea profilului de utilizator („My Profile”).}
+    \label{fig:screenshot_my_profile}
+\end{figure}
+
+\subsection{Personalizarea Vizuală: Modul Luminos și Traducerea Interfeței}
+Pentru a optimiza lizibilitatea în diferite medii de iluminare clinică (de exemplu, ecrane de laptop cu contrast slab sau cabinete luminate puternic), am implementat o temă complementară de tip modul luminos (White Mode / Light Mode). De asemenea, platforma oferă localizare integrală dinamică în limbile Română și Engleză prin intermediul bibliotecii \texttt{i18next}.
+
+Figura \ref{fig:ui_personalization} prezintă interfața rulată în modul luminos și selectorul de limbă integrat.
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.49\textwidth}
+        \centering
+        \color{red}\framebox[\textwidth]{\parbox{\textwidth}{\centering \vskip 1.8cm \textbf{[fig:screenshot\_light\_mode]} \\ Întreaga aplicație redată într-o paletă cromatică curată, pe fundal alb-gri cu contrast ridicat. \vskip 1.8cm}}
+        \caption{Interfața în Modul Luminos (White Mode).}
+        \label{fig:screenshot_light_mode}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.49\textwidth}
+        \centering
+        \color{red}\framebox[\textwidth]{\parbox{\textwidth}{\centering \vskip 1.8cm \textbf{[fig:screenshot\_localization]} \\ Meniul de selectare a limbii din antetul paginii, afișând tranziția instantă RO / EN. \vskip 1.8cm}}
+        \caption{Suportul lingvistic (Selectare RO / EN).}
+        \label{fig:screenshot_localization}
+    \end{subfigure}
+    \caption{Capabilitățile de personalizare vizuală și lingvistică ale platformei.}
+    \label{fig:ui_personalization}
+\end{figure}
+
+\subsection{Panoul de Administrare (Admin Panel)}
+Pentru a asigura mentenanța ușoară a aplicației, am creat un panou complex dedicat administratorului de sistem (Admin Panel). Administratorul are vizibilitate completă asupra resurselor platformei și poate edita în mod granular permisiunile utilizatorilor.
+
+Figura \ref{fig:admin_dashboard_and_roles} prezintă ecranul de bază al panoului de control al administratorului și componenta de management a rolurilor utilizatorilor.
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.49\textwidth}
+        \centering
+        \color{red}\framebox[\textwidth]{\parbox{\textwidth}{\centering \vskip 1.8cm \textbf{[fig:screenshot\_admin\_dashboard]} \\ Dashboard-ul principal de administrare, prezentând starea nodurilor de rețea și tabelele globale. \vskip 1.8cm}}
+        \caption{Panoul principal de administrare (Admin Panel).}
+        \label{fig:screenshot_admin_dashboard}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.49\textwidth}
+        \centering
+        \color{red}\framebox[\textwidth]{\parbox{\textwidth}{\centering \vskip 1.8cm \textbf{[fig:screenshot\_admin\_roles]} \\ Ecranul dedicat alocării și modificării rolurilor (PATIENT, DOCTOR, ADMIN) pentru conturile înregistrate. \vskip 1.8cm}}
+        \caption{Gestiunea rolurilor utilizatorilor (Users Role).}
+        \label{fig:screenshot_admin_roles}
+    \end{subfigure}
+    \caption{Componentele de bază și de gestiune a drepturilor din panoul administrativ.}
+    \label{fig:admin_dashboard_and_roles}
+\end{figure}
+
+Tot prin intermediul portalului de administrare, se pot crea conturi de test în mod rapid (Add User) și se pot edita sau anula direct programările clinice active și consultațiile, în cazul în care este necesară o intervenție tehnică la nivel de bază de date.
+
+Figura \ref{fig:admin_forms} arată formularele de adăugare și respectiv editare administrativă.
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.49\textwidth}
+        \centering
+        \color{red}\framebox[\textwidth]{\parbox{\textwidth}{\centering \vskip 1.8cm \textbf{[fig:screenshot\_admin\_add\_user]} \\ Formularul administrativ pentru înregistrarea forțată a unui cont direct din panou. \vskip 1.8cm}}
+        \caption{Formularul de adăugare utilizator nou (Add User).}
+        \label{fig:screenshot_admin_add_user}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.49\textwidth}
+        \centering
+        \color{red}\framebox[\textwidth]{\parbox{\textwidth}{\centering \vskip 1.8cm \textbf{[fig:screenshot\_admin\_edits]} \\ Modalele administrative pentru editarea rapidă a programărilor și consultațiilor. \vskip 1.8cm}}
+        \caption{Editarea consultațiilor și programărilor.}
+        \label{fig:screenshot_admin_edits}
+    \end{subfigure}
+    \caption{Ecranele de gestiune a resurselor și adăugare de entități din perspectiva administratorului.}
+    \label{fig:admin_forms}
+\end{figure}
+
+\subsection{Criptarea Securizată a Rapoartelor și Notificările WebSocket}
+Pentru a încheia prezentarea interfeței, Figura \ref{fig:security_and_notifications} arată modul în care platforma integrează securitatea cu elementele dinamice de colaborare. Atunci când o consultație este finalizată, datele sunt decriptate local automat pe portalul pacientului, cu confirmarea ecusonului de protecție criptografică activă, iar notificările sosite prin WebSocket anunță utilizatorul instantaneu în browser.
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[b]{0.49\textwidth}
+        \centering
+        \color{red}\framebox[\textwidth]{\parbox{\textwidth}{\centering \vskip 1.8cm \textbf{[fig:screenshot\_patient\_dashboard]} \\ Ecusonul verde „Protected by E2EE” afișat pe raportul decriptat automat local pe ecranul pacientului. \vskip 1.8cm}}
+        \caption{Decriptarea E2EE transparentă pe portalul Pacientului.}
+        \label{fig:screenshot_patient_dashboard}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[b]{0.49\textwidth}
+        \centering
+        \color{red}\framebox[\textwidth]{\parbox{\textwidth}{\centering \vskip 1.8cm \textbf{[fig:screenshot\_notifications]} \\ Alerta vizuală de tip toast recepționată în timp real prin WebSocket la semnarea raportului clinic. \vskip 1.8cm}}
+        \caption{Notificarea instantanee recepționată în browser.}
+        \label{fig:screenshot_notifications}
+    \end{subfigure}
+    \caption{Funcționalitățile avansate de securitate și reactivitate vizuală în timp real ale platformei.}
+    \label{fig:security_and_notifications}
+\end{figure}

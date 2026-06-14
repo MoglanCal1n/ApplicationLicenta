@@ -1,4 +1,3 @@
-version: '3.8'
 
 services:
   db:
@@ -13,7 +12,42 @@ services:
       - "5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
-  
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U licenta_user -d licenta_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: licenta_ollama
+    restart: always
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list || exit 1"]
+      interval: 10s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
+
+  # Init container that pulls the phi3 model into Ollama, then exits.
+  # Shares the same volume so the model is persisted across restarts.
+  ollama-pull:
+    image: ollama/ollama:latest
+    container_name: licenta_ollama_pull
+    depends_on:
+      ollama:
+        condition: service_healthy
+    volumes:
+      - ollama_data:/root/.ollama
+    environment:
+      - OLLAMA_HOST=ollama
+    entrypoint: ["sh", "-c", "ollama pull phi3"]
+    restart: "no"
+
   api:
     build: .
     container_name: licenta_backend
@@ -21,9 +55,15 @@ services:
     ports:
       - "8000:8000"
     depends_on:
-      - db
+      db:
+        condition: service_healthy
+      ollama:
+        condition: service_healthy
     env_file:
       - .env
+    environment:
+      - OLLAMA_URL=http://ollama:11434/api/generate
+      - OLLAMA_MODEL=phi3
     volumes:
       - .:/app
 
@@ -33,20 +73,13 @@ services:
     restart: always
     ports:
       - "5173:5173"
+    depends_on:
+      - api
     environment:
       - VITE_API_URL=http://localhost:8000
     volumes:
       - ../Frontend:/app
-      - /app/node_modules # Prevent host from overwriting container's node_modules
-      
-  ollama:
-    image: ollama/ollama:latest
-    container_name: licenta_ollama
-    restart: always
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
+      - /app/node_modules
 
 volumes:
   postgres_data:

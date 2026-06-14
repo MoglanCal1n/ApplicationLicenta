@@ -5,8 +5,8 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-# Default to host.docker.internal for Docker Desktop (Windows/Mac)
-OLLAMA_URL = os.getenv("OLLAMA_URL", "http://host.docker.internal:11434/api/generate")
+# Default to the Docker service name for inter-container networking
+OLLAMA_URL = os.getenv("OLLAMA_URL", "http://ollama:11434/api/generate")
 MODEL_NAME = os.getenv("OLLAMA_MODEL", "phi3")
 
 # ── Structured extraction system prompt ───────────────────────────────────────

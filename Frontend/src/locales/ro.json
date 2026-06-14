@@ -302,7 +302,11 @@
     "success_picture": "Poza de profil actualizată!",
     "success_save": "Profil salvat cu succes!",
     "error_save": "Eroare la salvare.",
-    "error_load": "Nu s-a putut încărca profilul.",
     "required_marker": "*"
+  },
+  "notifications": {
+    "title": "Notificări",
+    "mark_all_read": "Citește-le pe toate",
+    "empty": "Nu ai nicio notificare."
   }
 }

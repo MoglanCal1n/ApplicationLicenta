@@ -13,6 +13,7 @@ import os
 import uuid
 import logging
 from datetime import datetime
+from routers.notification_router import create_and_push_notification
 
 logger = logging.getLogger(__name__)
 
@@ -174,6 +175,7 @@ async def upload_audio_consultation(
     return {
         "message":           "Audio uploaded and consultation saved.",
         "consultation_id":   consultation.id,
+        "patient_user_id":   patient.user_id,
         "result":            result,
         "structured_fields": structured,
     }
@@ -220,6 +222,7 @@ async def transcribe_consultation(
     return {
         "message":           "Consultation saved successfully.",
         "consultation_id":   consultation.id,
+        "patient_user_id":   patient.user_id,
         "result":            result,
         "structured_fields": structured,
     }
@@ -308,6 +311,13 @@ def get_my_consultation_history(
             "pdf_report_url": c.pdf_report_url,
             "doctor_name": doctor_display,
             "doctor_specialization": doctor_profile.specialization if doctor_profile else "Necunoscut",
+            # E2EE fields for client-side decryption
+            "doctor_user_id": doctor_profile.user_id if doctor_profile else None,
+            "encrypted_final_text": c.encrypted_final_text,
+            "encrypted_structured": c.encrypted_structured,
+            "e2ee_iv_b64": c.e2ee_iv_b64,
+            "e2ee_salt_b64": c.e2ee_salt_b64,
+            "e2ee_sender_user_id": c.e2ee_sender_user_id,
         })
     return result
 
@@ -357,6 +367,14 @@ def get_doctor_consultation_history(
             "text_format_html": meta.get("text_format_html", c.ai_draft_transcript or ""),
             "patient_email": patient_user.email if patient_user else "Unknown",
             "patient_cnp": patient_profile.cnp if patient_profile else "N/A",
+            # E2EE fields for client-side decryption
+            "patient_user_id": patient_profile.user_id if patient_profile else None,
+            "encrypted_final_text": c.encrypted_final_text,
+            "encrypted_structured": c.encrypted_structured,
+            "e2ee_iv_b64": c.e2ee_iv_b64,
+            "e2ee_salt_b64": c.e2ee_salt_b64,
+            "e2ee_sender_user_id": c.e2ee_sender_user_id,
+            "mixed_score_metadata": c.mixed_score_metadata,
         })
     return result
 
@@ -414,7 +432,7 @@ def get_consultation_by_id(
 
 # ─── Finalize (structured PDF template) ──────────────────────────────────────
 @router.post("/{consultation_id}/finalize")
-def finalize_consultation(
+async def finalize_consultation(
     consultation_id: int,
     data: ConsultationFinalizeStructured,
     current_user: User = Depends(get_current_user),
@@ -436,7 +454,7 @@ def finalize_consultation(
     patient_user = db.query(User).filter(User.id == patient.user_id).first() if patient else None
     doctor_user = db.query(User).filter(User.id == doctor.user_id).first()
 
-    # Persist the structured data and free-text in the consultation
+    # Persist the structured data and free-text temporarily for PDF generation
     consultation.final_revised_text = data.final_revised_text
     consultation.status = ConsultationStatus.SIGNED
     consultation.signed_at = datetime.now()
@@ -451,7 +469,7 @@ def finalize_consultation(
     }
     consultation.mixed_score_metadata = meta
 
-    # Generate structured PDF
+    # Generate structured PDF (from plaintext — before we clear it)
     pdf_filename = generate_structured_pdf(
         consultation_id=consultation.id,
         patient_cnp=patient.cnp if patient else "N/A",
@@ -469,6 +487,20 @@ def finalize_consultation(
 
     consultation.pdf_report_url = f"/static/pdf/{pdf_filename}"
 
+    # ── E2EE: Store encrypted blobs and clear plaintext ────────────────
+    if data.encrypted_final_text and data.e2ee_iv_b64 and data.e2ee_salt_b64:
+        consultation.encrypted_final_text = data.encrypted_final_text
+        consultation.encrypted_structured = data.encrypted_structured
+        consultation.e2ee_iv_b64 = data.e2ee_iv_b64
+        consultation.e2ee_salt_b64 = data.e2ee_salt_b64
+        consultation.e2ee_sender_user_id = current_user.id
+
+        # Clear plaintext — the server no longer needs it
+        consultation.final_revised_text = None
+        consultation.ai_draft_transcript = None
+        consultation.mixed_score_metadata = None
+        logger.info(f"[e2ee] Consultation {consultation.id} finalized with E2EE encryption.")
+
     # Mark the linked appointment as COMPLETED
     if consultation.appointment_id:
         appointment = db.query(Appointment).filter(Appointment.id == consultation.appointment_id).first()
@@ -478,6 +510,18 @@ def finalize_consultation(
     db.commit()
     db.refresh(consultation)
 
+    # In-app notification via WebSocket
+    doctor_name = f"{doctor_user.first_name or ''} {doctor_user.last_name or ''}".strip() or doctor_user.email
+    if patient_user:
+        await create_and_push_notification(
+            db=db,
+            user_id=patient_user.id,
+            notification_type="CONSULTATION_FINALIZED",
+            title="Consultation Finalized",
+            message=f"Dr. {doctor_name} has finalized and signed your consultation report.",
+            metadata={"consultation_id": consultation.id},
+        )
+
     return {
         "message": "Consultation finalized and signed successfully.",
         "pdf_url": consultation.pdf_report_url
@@ -486,7 +530,7 @@ def finalize_consultation(
 
 # ─── Update / re-generate PDF ─────────────────────────────────────────────────
 @router.put("/{consultation_id}/update")
-def update_consultation(
+async def update_consultation(
     consultation_id: int,
     data: ConsultationFinalizeStructured,
     current_user: User = Depends(get_current_user),
@@ -535,8 +579,33 @@ def update_consultation(
     )
     consultation.pdf_report_url = f"/static/pdf/{pdf_filename}"
 
+    # ── E2EE: Store encrypted blobs and clear plaintext ────────────────
+    if data.encrypted_final_text and data.e2ee_iv_b64 and data.e2ee_salt_b64:
+        consultation.encrypted_final_text = data.encrypted_final_text
+        consultation.encrypted_structured = data.encrypted_structured
+        consultation.e2ee_iv_b64 = data.e2ee_iv_b64
+        consultation.e2ee_salt_b64 = data.e2ee_salt_b64
+        consultation.e2ee_sender_user_id = current_user.id
+
+        consultation.final_revised_text = None
+        consultation.ai_draft_transcript = None
+        consultation.mixed_score_metadata = None
+        logger.info(f"[e2ee] Consultation {consultation.id} updated with E2EE encryption.")
+
     db.commit()
     db.refresh(consultation)
+
+    # In-app notification via WebSocket on update
+    doctor_name = f"{doctor_user.first_name or ''} {doctor_user.last_name or ''}".strip() or doctor_user.email
+    if patient_user:
+        await create_and_push_notification(
+            db=db,
+            user_id=patient_user.id,
+            notification_type="CONSULTATION_UPDATED",
+            title="Consultation Report Updated",
+            message=f"Dr. {doctor_name} has updated your consultation report.",
+            metadata={"consultation_id": consultation.id},
+        )
 
     return {
         "message": "Consultation updated and PDF regenerated.",

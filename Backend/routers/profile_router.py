@@ -151,7 +151,18 @@ def get_patients_list(current_user: User = Depends(get_current_user), db: Sessio
     if current_user.role != UserRole.DOCTOR:
         raise HTTPException(status_code=403, detail="Only doctors can view patients.")
     patients = db.query(PatientProfile).all()
-    return [{"id": p.id, "cnp": p.cnp, "user_id": p.user_id} for p in patients]
+    result = []
+    for p in patients:
+        user = db.query(User).filter(User.id == p.user_id).first()
+        result.append({
+            "id": p.id,
+            "cnp": p.cnp,
+            "user_id": p.user_id,
+            "first_name": user.first_name if user else None,
+            "last_name": user.last_name if user else None,
+            "profile_picture_url": user.profile_picture_url if user else None,
+        })
+    return result
 
 @router.get("/doctors")
 def get_doctors_list(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
@@ -174,8 +185,8 @@ def get_doctors_list(current_user: User = Depends(get_current_user), db: Session
             "specialization": d.specialization,
             "first_name":   first,
             "last_name":    last,
-            "display_name": display_name,   # "Ion Popescu" or email prefix
-            # license_number is deliberately excluded from this endpoint
+            "display_name": display_name,
+            "profile_picture_url": user.profile_picture_url,
         })
     return result
 

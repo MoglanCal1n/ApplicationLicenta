@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { Calendar, Clock, ArrowLeft, Loader2, Stethoscope, CheckCircle, XCircle, ChevronRight, AlertCircle } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import api from '../api';
+import api, { API_BASE_URL } from '../api';
 import { Toast, useToast, Spinner } from '../components/ui';
 
 /* ─── Step indicator ─────────────────────────────────────────────────── */
@@ -45,6 +45,7 @@ export default function BookAppointment() {
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [selectedSlot, setSelectedSlot] = useState('');
   const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
 
   const todayStr = new Date().toISOString().split('T')[0];
 
@@ -81,10 +82,12 @@ export default function BookAppointment() {
     : doctors;
 
   const handleSubmit = async () => {
+    if (submittingRef.current) return;
     if (!selectedDoctor || !selectedDate || !selectedSlot) {
       showToast(t('appointments.select_all_steps'), 'info');
       return;
     }
+    submittingRef.current = true;
     setSubmitting(true);
     try {
       const appointmentDate = new Date(`${selectedDate}T${selectedSlot}:00`).toISOString();
@@ -95,9 +98,9 @@ export default function BookAppointment() {
       showToast(t('appointments.confirm_success'), 'success');
       setTimeout(() => navigate('/ehealth/dashboard'), 2200);
     } catch (err: any) {
-      showToast(err.response?.data?.detail || t('appointments.confirm_error'), 'error');
-    } finally {
+      submittingRef.current = false;
       setSubmitting(false);
+      showToast(err.response?.data?.detail || t('appointments.confirm_error'), 'error');
     }
   };
 
@@ -217,11 +220,21 @@ export default function BookAppointment() {
                 onMouseEnter={(e) => { e.currentTarget.style.borderColor = 'var(--color-primary)'; }}
                 onMouseLeave={(e) => { e.currentTarget.style.borderColor = 'transparent'; }}
               >
-                <div
-                  className="h-12 w-12 rounded-full text-white flex items-center justify-center font-bold text-lg flex-shrink-0"
-                  style={{ background: 'linear-gradient(135deg, var(--color-primary), #3B82F6)' }}
-                >
-                  {doc.display_name?.[0]?.toUpperCase() ?? 'D'}
+                <div className="h-12 w-12 rounded-full flex-shrink-0 overflow-hidden border border-slate-200">
+                  {doc.profile_picture_url ? (
+                    <img
+                      src={`${API_BASE_URL}${doc.profile_picture_url}`}
+                      alt={doc.display_name}
+                      className="h-full w-full object-cover"
+                    />
+                  ) : (
+                    <div
+                      className="h-full w-full text-white flex items-center justify-center font-bold text-lg"
+                      style={{ background: 'linear-gradient(135deg, var(--color-primary), #3B82F6)' }}
+                    >
+                      {doc.display_name?.[0]?.toUpperCase() ?? 'D'}
+                    </div>
+                  )}
                 </div>
                 <div className="flex-1">
                   <p className="font-semibold" style={{ color: 'var(--color-text-primary)' }}>Dr. {doc.display_name}</p>

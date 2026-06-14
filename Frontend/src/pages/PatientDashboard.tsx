@@ -1,41 +1,95 @@
-import { useEffect, useState } from 'react';
-import { FileText, CalendarClock, Loader2, Download, CheckCircle, Clock, CalendarDays, Stethoscope } from 'lucide-react';
+import { useEffect, useState, useCallback } from 'react';
+import { FileText, CalendarClock, Loader2, Download, CheckCircle, Clock, CalendarDays, Stethoscope, ShieldCheck } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import api from '../api';
 import { StatusBadge, StatCard, SectionCard, Spinner } from '../components/ui';
+import { NOTIFICATION_EVENT } from '../context/NotificationContext';
+import { useAuth } from '../context/AuthContext';
+import {
+  loadKeyPair, importPublicKey, decryptFile,
+  base64ToArrayBuffer, base64ToUint8Array,
+} from '../crypto';
 
 export default function PatientDashboard() {
   const navigate = useNavigate();
   const { t } = useTranslation();
+  const { user } = useAuth();
   const [stats, setStats] = useState({ total_consultations: 0, upcoming_appointments: 0 });
   const [consultations, setConsultations] = useState<any[]>([]);
   const [appointments, setAppointments] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
 
+  /**
+   * Decrypt a single E2EE-encrypted consultation using the patient's private key.
+   */
+  const decryptConsultation = useCallback(async (c: any): Promise<any> => {
+    if (!c.encrypted_final_text || !c.e2ee_iv_b64 || !c.e2ee_salt_b64 || !user) return c;
+
+    try {
+      const keyPair = await loadKeyPair(user.id);
+      if (!keyPair) return c;
+
+      // The sender was the doctor — use the doctor's public key for ECDH
+      const doctorUserId = c.doctor_user_id || c.e2ee_sender_user_id;
+      if (!doctorUserId) return c;
+
+      const pubKeyRes = await api.get(`/e2ee/public-key/${doctorUserId}`);
+      const doctorPubKey = await importPublicKey(pubKeyRes.data.public_key_jwk);
+
+      const iv = base64ToUint8Array(c.e2ee_iv_b64);
+      const salt = base64ToUint8Array(c.e2ee_salt_b64);
+
+      const ciphertext = base64ToArrayBuffer(c.encrypted_final_text);
+      const decryptedRaw = await decryptFile(ciphertext, iv, salt, keyPair.privateKey, doctorPubKey);
+      const combined = JSON.parse(new TextDecoder().decode(decryptedRaw));
+
+      return {
+        ...c,
+        _decrypted: true,
+        ai_draft_transcript: combined.final_text || c.ai_draft_transcript,
+        final_revised_text: combined.final_text || '',
+      };
+    } catch (err) {
+      console.warn(`[E2EE] Failed to decrypt consultation ${c.id}:`, err);
+      return { ...c, _decrypted: false };
+    }
+  }, [user]);
+
+  const fetchAll = useCallback(async () => {
+    try {
+      const [statsRes, consultRes, apptsRes] = await Promise.all([
+        api.get('/stats/patient'),
+        api.get('/consultations/my-history'),
+        api.get('/appointments/me'),
+      ]);
+      setStats(statsRes.data);
+
+      // Decrypt E2EE-encrypted consultations
+      const raw = Array.isArray(consultRes.data) ? consultRes.data : [];
+      const decrypted = await Promise.all(raw.map(decryptConsultation));
+      setConsultations(decrypted);
+
+      setAppointments(
+        apptsRes.data.filter((a: any) =>
+          a.status === 'CONFIRMED' || a.status === 'PENDING'
+        )
+      );
+    } catch (err) {
+      console.error('Failed to fetch patient data', err);
+    } finally {
+      setLoading(false);
+    }
+  }, [decryptConsultation]);
+
+  useEffect(() => { fetchAll(); }, [fetchAll]);
+
+  // Auto-refresh when a real-time notification arrives (e.g. doctor confirmed/rejected appointment)
   useEffect(() => {
-    const fetchAll = async () => {
-      try {
-        const [statsRes, consultRes, apptsRes] = await Promise.all([
-          api.get('/stats/patient'),
-          api.get('/consultations/my-history'),
-          api.get('/appointments/me'),
-        ]);
-        setStats(statsRes.data);
-        setConsultations(Array.isArray(consultRes.data) ? consultRes.data : []);
-        setAppointments(
-          apptsRes.data.filter((a: any) =>
-            a.status === 'CONFIRMED' || a.status === 'PENDING'
-          )
-        );
-      } catch (err) {
-        console.error('Failed to fetch patient data', err);
-      } finally {
-        setLoading(false);
-      }
-    };
-    fetchAll();
-  }, []);
+    const handler = () => { fetchAll(); };
+    window.addEventListener(NOTIFICATION_EVENT, handler);
+    return () => window.removeEventListener(NOTIFICATION_EVENT, handler);
+  }, [fetchAll]);
 
   const handleDownload = async (consultationId: number) => {
     try {
@@ -113,8 +167,11 @@ export default function PatientDashboard() {
                     <Stethoscope className="h-5 w-5" />
                   </div>
                   <div>
-                    <p className="font-medium text-sm" style={{ color: 'var(--color-text-primary)' }}>
-                      {t('appointments.patient_id', { id: appt.id })}
+                    <p className="font-semibold text-sm animate-fade-in" style={{ color: 'var(--color-text-primary)' }}>
+                      {appt.doctor_specialization || 'Medical Specialty'}
+                    </p>
+                    <p className="text-xs font-semibold mb-1" style={{ color: 'var(--color-text-secondary)' }}>
+                      Dr. {appt.doctor_name || 'Specialist'}
                     </p>
                     <p className="text-xs" style={{ color: 'var(--color-text-tertiary)' }}>
                       {new Date(appt.appointment_date).toLocaleString(undefined, {

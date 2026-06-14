@@ -2,9 +2,16 @@ from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 from db.database import engine, Base
 import os
+import logging
 
-from models import user, consultation 
-from routers import auth_router, profile_router, consultation_router, appointment_router, stats_router, e2ee_router, admin_router
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+
+
+from models import user, consultation, notification
+from routers import auth_router, profile_router, consultation_router, appointment_router, stats_router, e2ee_router, admin_router, notification_router
 
 Base.metadata.create_all(bind=engine)
 
@@ -64,6 +71,7 @@ app.include_router(appointment_router.router)
 app.include_router(stats_router.router)
 app.include_router(e2ee_router.router)
 app.include_router(admin_router.router)
+app.include_router(notification_router.router)
 
 @app.get("/")
 def health_check():

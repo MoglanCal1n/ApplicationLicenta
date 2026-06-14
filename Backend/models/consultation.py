@@ -65,6 +65,15 @@ class Consultation(Base):
     created_at = Column(DateTime, default=datetime.now, nullable=False)
     signed_at = Column(DateTime, nullable=True)
 
+    # ── E2EE: Encrypted fields (populated when status=SIGNED) ─────────
+    # Ciphertext is base64-encoded; server stores but cannot decrypt.
+    encrypted_final_text = Column(Text, nullable=True)       # AES-GCM ciphertext of final_revised_text
+    encrypted_structured = Column(Text, nullable=True)       # AES-GCM ciphertext of structured fields JSON
+    e2ee_iv_b64 = Column(String, nullable=True)              # 12-byte IV (base64)
+    e2ee_salt_b64 = Column(String, nullable=True)            # 16-byte HKDF salt (base64)
+    e2ee_sender_user_id = Column(Integer, nullable=True)     # Doctor's user_id → patient uses this to fetch the public key
+
+
     # ── Soft delete ───────────────────────────────────────────────────────
     is_deleted = Column(Boolean, default=False, nullable=False)
     deleted_at = Column(DateTime, nullable=True)

@@ -197,6 +197,30 @@ def admin_soft_delete_consultation(
     return {"message": f"Consultation {consultation_id} soft-deleted.", "id": consultation_id}
 
 
+# ── Restore soft-deleted consultation ─────────────────────────────────────────
+
+@router.post("/consultations/{consultation_id}/restore")
+def admin_restore_consultation(
+    consultation_id: int,
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Admin: restore a soft-deleted consultation."""
+    consultation = db.query(Consultation).filter(
+        Consultation.id == consultation_id,
+        Consultation.is_deleted == True
+    ).first()
+    if not consultation:
+        raise HTTPException(status_code=404, detail="Consultation not found or not deleted.")
+
+    consultation.is_deleted = False
+    consultation.deleted_at = None
+    consultation.updated_by = admin.id
+    db.commit()
+
+    return {"message": f"Consultation {consultation_id} restored.", "id": consultation_id}
+
+
 # ── Admin stats overview ──────────────────────────────────────────────────────
 
 @router.get("/stats")
@@ -219,4 +243,98 @@ def admin_stats(
             Consultation.is_deleted == False,
             Consultation.status == "DRAFT"
         ).count(),
+    }
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# ██  USER MANAGEMENT
+# ══════════════════════════════════════════════════════════════════════════════
+
+from pydantic import BaseModel, EmailStr
+from core.security import get_password_hash
+
+
+class AdminUserCreate(BaseModel):
+    email: EmailStr
+    password: str
+    role: UserRole = UserRole.PATIENT
+
+
+@router.get("/users/list")
+def admin_list_users(
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    role: Optional[str] = None,
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Admin: paginated list of all users with their profile info."""
+    query = db.query(User)
+
+    if role:
+        query = query.filter(User.role == role)
+
+    total = query.count()
+    skip = (page - 1) * limit
+    users = query.order_by(User.created_at.desc()).offset(skip).limit(limit).all()
+
+    result = []
+    for u in users:
+        item = {
+            "id": u.id,
+            "email": u.email,
+            "role": u.role,
+            "first_name": u.first_name,
+            "last_name": u.last_name,
+            "profile_picture_url": u.profile_picture_url,
+            "created_at": u.created_at,
+        }
+        # Add role-specific info
+        if u.role == UserRole.PATIENT:
+            p = db.query(PatientProfile).filter(PatientProfile.user_id == u.id).first()
+            item["cnp"] = p.cnp if p else None
+        elif u.role == UserRole.DOCTOR:
+            d = db.query(DoctorProfile).filter(DoctorProfile.user_id == u.id).first()
+            item["specialization"] = d.specialization if d else None
+            item["license_number"] = d.license_number if d else None
+        result.append(item)
+
+    return {
+        "items": result,
+        "total": total,
+        "page": page,
+        "limit": limit,
+        "pages": math.ceil(total / limit) if total > 0 else 0,
+    }
+
+
+@router.post("/users/create", status_code=status.HTTP_201_CREATED)
+def admin_create_user(
+    data: AdminUserCreate,
+    admin: User = Depends(get_current_admin),
+    db: Session = Depends(get_db)
+):
+    """Admin: create a user account directly (no admin_code needed)."""
+    existing = db.query(User).filter(User.email == data.email).first()
+    if existing:
+        raise HTTPException(status_code=400, detail="A user with this email already exists.")
+
+    hashed_pwd = get_password_hash(data.password)
+    new_user = User(email=data.email, password_hash=hashed_pwd, role=data.role)
+    db.add(new_user)
+    db.flush()
+
+    if data.role == UserRole.PATIENT:
+        db.add(PatientProfile(user_id=new_user.id, cnp=f"TEMP_{new_user.id}"))
+    elif data.role == UserRole.DOCTOR:
+        db.add(DoctorProfile(user_id=new_user.id, specialization="N/A", license_number=f"TEMP_{new_user.id}"))
+
+    db.commit()
+    db.refresh(new_user)
+
+    return {
+        "message": f"User {data.email} created successfully.",
+        "id": new_user.id,
+        "email": new_user.email,
+        "role": new_user.role,
     }

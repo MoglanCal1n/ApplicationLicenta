@@ -13,6 +13,7 @@ from schemas.appointment_schema import (
 )
 from core.security import get_current_user, get_current_admin
 from services.notification_service import send_email
+from routers.notification_router import create_and_push_notification
 
 router = APIRouter(prefix="/appointments", tags=["Appointments"])
 
@@ -67,7 +68,7 @@ def get_available_slots(
 # ─── Patient requests an appointment ─────────────────────────────────────────
 
 @router.post("/request", response_model=AppointmentResponse, status_code=status.HTTP_201_CREATED)
-def request_appointment(
+async def request_appointment(
     appointment_data: AppointmentCreate,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db)
@@ -98,13 +99,26 @@ def request_appointment(
     db.commit()
     db.refresh(new_appointment)
 
+    # Notify the doctor about new appointment request
+    patient_name = f"{current_user.first_name or ''} {current_user.last_name or ''}".strip() or current_user.email
+    doctor_user = db.query(User).filter(User.id == doctor.user_id).first()
+    if doctor_user:
+        await create_and_push_notification(
+            db=db,
+            user_id=doctor_user.id,
+            notification_type="APPOINTMENT_BOOKED",
+            title="New Appointment Request",
+            message=f"{patient_name} has requested an appointment on {new_appointment.appointment_date.strftime('%d %b %Y at %H:%M')}.",
+            metadata={"appointment_id": new_appointment.id},
+        )
+
     return new_appointment
 
 
 # ─── Doctor updates appointment status ────────────────────────────────────────
 
 @router.put("/{appointment_id}/status", response_model=AppointmentResponse)
-def update_appointment_status(
+async def update_appointment_status(
     appointment_id: int,
     status_update: AppointmentStatusUpdate,
     current_user: User = Depends(get_current_user),
@@ -122,24 +136,41 @@ def update_appointment_status(
     if appointment.doctor_id != doctor.id:
         raise HTTPException(status_code=403, detail="Not authorized to update this appointment.")
 
+    if appointment.status == status_update.status:
+        # Idempotent skip: already updated, prevent duplicate notifications
+        return appointment
+
     appointment.status = status_update.status
     appointment.updated_by = current_user.id
     db.commit()
     db.refresh(appointment)
 
-    # Send notification to patient
+    # Send notification to patient (email + in-app)
     patient = db.query(PatientProfile).filter(PatientProfile.id == appointment.patient_id).first()
     patient_user = db.query(User).filter(User.id == patient.user_id).first()
 
     email_body = f"Hello,\n\nYour appointment with Doctor {doctor.license_number} on {appointment.appointment_date} has been {appointment.status.value}."
     send_email(patient_user.email, "Appointment Status Update", email_body)
 
+    # In-app notification via WebSocket
+    doctor_name = f"{current_user.first_name or ''} {current_user.last_name or ''}".strip() or current_user.email
+    status_label = appointment.status.value.lower()
+    if patient_user:
+        await create_and_push_notification(
+            db=db,
+            user_id=patient_user.id,
+            notification_type=f"APPOINTMENT_{appointment.status.value}",
+            title=f"Appointment {status_label.title()}",
+            message=f"Dr. {doctor_name} has {status_label} your appointment on {appointment.appointment_date.strftime('%d %b %Y at %H:%M')}.",
+            metadata={"appointment_id": appointment.id},
+        )
+
     return appointment
 
 
 # ─── My appointments (patient/doctor) ─────────────────────────────────────────
 
-@router.get("/me", response_model=List[AppointmentResponse])
+@router.get("/me")
 def get_my_appointments(
     page: int = Query(1, ge=1),
     limit: int = Query(20, ge=1, le=100),
@@ -179,7 +210,45 @@ def get_my_appointments(
             raise HTTPException(status_code=400, detail="Invalid date_to format. Use YYYY-MM-DD.")
 
     skip = (page - 1) * limit
-    return query.order_by(Appointment.appointment_date.desc()).offset(skip).limit(limit).all()
+    appointments = query.order_by(Appointment.appointment_date.desc()).offset(skip).limit(limit).all()
+
+    # Enrich with profile data
+    result = []
+    for appt in appointments:
+        data = AppointmentResponse.model_validate(appt).model_dump()
+
+        if current_user.role == UserRole.DOCTOR:
+            # Doctor sees patient info
+            pat_profile = db.query(PatientProfile).filter(PatientProfile.id == appt.patient_id).first()
+            pat_user = db.query(User).filter(User.id == pat_profile.user_id).first() if pat_profile else None
+            if pat_user:
+                first = (pat_user.first_name or "").strip()
+                last = (pat_user.last_name or "").strip()
+                data["patient_name"] = f"{first} {last}".strip() or pat_user.email.split("@")[0]
+                data["patient_picture_url"] = pat_user.profile_picture_url
+                data["patient_email"] = pat_user.email
+            else:
+                data["patient_name"] = f"Patient #{appt.patient_id}"
+                data["patient_picture_url"] = None
+                data["patient_email"] = None
+        elif current_user.role == UserRole.PATIENT:
+            # Patient sees doctor info
+            doc_profile = db.query(DoctorProfile).filter(DoctorProfile.id == appt.doctor_id).first()
+            doc_user = db.query(User).filter(User.id == doc_profile.user_id).first() if doc_profile else None
+            if doc_user:
+                first = (doc_user.first_name or "").strip()
+                last = (doc_user.last_name or "").strip()
+                data["doctor_name"] = f"{first} {last}".strip() or doc_user.email.split("@")[0]
+                data["doctor_picture_url"] = doc_user.profile_picture_url
+                data["doctor_specialization"] = doc_profile.specialization if doc_profile else None
+            else:
+                data["doctor_name"] = f"Doctor #{appt.doctor_id}"
+                data["doctor_picture_url"] = None
+                data["doctor_specialization"] = None
+
+        result.append(data)
+
+    return result
 
 
 # ─── Get by ID ────────────────────────────────────────────────────────────────

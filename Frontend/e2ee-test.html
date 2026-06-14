@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>E2EE Crypto Test Suite</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --surface: #1a1d27;
+      --border: #2a2d3a;
+      --text: #e4e4e7;
+      --text-muted: #9ca3af;
+      --pass: #22c55e;
+      --fail: #ef4444;
+      --warn: #f59e0b;
+      --accent: #6366f1;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 2rem;
+      line-height: 1.6;
+    }
+    h1 {
+      font-size: 1.75rem;
+      margin-bottom: 0.5rem;
+      background: linear-gradient(135deg, var(--accent), #a855f7);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .subtitle { color: var(--text-muted); margin-bottom: 2rem; }
+    .controls {
+      display: flex; gap: 1rem; margin-bottom: 2rem; flex-wrap: wrap;
+    }
+    button {
+      padding: 0.6rem 1.4rem;
+      border: none;
+      border-radius: 8px;
+      font-weight: 600;
+      cursor: pointer;
+      font-size: 0.9rem;
+      transition: all 0.2s;
+    }
+    button:hover { transform: translateY(-1px); }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), #a855f7);
+      color: white;
+    }
+    .btn-secondary {
+      background: var(--surface);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    #results {
+      display: flex; flex-direction: column; gap: 0.5rem;
+    }
+    .test-result {
+      display: flex; align-items: center; gap: 0.75rem;
+      padding: 0.75rem 1rem;
+      background: var(--surface);
+      border-radius: 8px;
+      border-left: 3px solid transparent;
+      font-size: 0.9rem;
+      transition: all 0.3s ease;
+    }
+    .test-result.pass { border-left-color: var(--pass); }
+    .test-result.fail { border-left-color: var(--fail); }
+    .test-result.running { border-left-color: var(--warn); }
+    .test-result .icon { font-size: 1.2rem; min-width: 1.5rem; text-align: center; }
+    .test-result.pass .icon { color: var(--pass); }
+    .test-result.fail .icon { color: var(--fail); }
+    .test-result.running .icon { color: var(--warn); }
+    .test-result .name { flex: 1; }
+    .test-result .detail {
+      color: var(--text-muted); font-size: 0.8rem;
+      max-width: 400px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .summary {
+      margin-top: 1.5rem;
+      padding: 1rem 1.5rem;
+      background: var(--surface);
+      border-radius: 10px;
+      font-size: 1rem;
+      display: flex; gap: 2rem;
+    }
+    .summary .stat { display: flex; align-items: center; gap: 0.5rem; }
+    .summary .stat.pass { color: var(--pass); }
+    .summary .stat.fail { color: var(--fail); }
+    .summary .stat.total { color: var(--accent); }
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    .spinner {
+      display: inline-block; width: 1rem; height: 1rem;
+      border: 2px solid var(--warn);
+      border-top-color: transparent;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+  </style>
+</head>
+<body>
+  <h1>🔐 E2EE Crypto Test Suite</h1>
+  <p class="subtitle">Testare completă a modulului de criptare End-to-End (ECDH P-256 + HKDF-SHA256 + AES-256-GCM)</p>
+
+  <div class="controls">
+    <button class="btn-primary" onclick="runAllTests()">▶ Rulează toate testele</button>
+    <button class="btn-secondary" onclick="clearResults()">🗑 Curăță rezultatele</button>
+  </div>
+
+  <div id="results"></div>
+  <div id="summary"></div>
+
+  <script>
+    // ══════════════════════════════════════════════════════════════════════════════
+    // RE-IMPLEMENT crypto.ts functions here so we can test them in a plain HTML page
+    // These are EXACT copies of the logic from Frontend/src/crypto.ts
+    // ══════════════════════════════════════════════════════════════════════════════
+
+    const ECDH_CURVE = 'P-256';
+    const AES_KEY_LENGTH = 256;
+    const AES_ALGORITHM = 'AES-GCM';
+    const IV_LENGTH = 12;
+    const SALT_LENGTH = 16;
+    const HKDF_INFO = new TextEncoder().encode('ehealth-e2ee-v1');
+
+    async function generateKeyPair() {
+      const keyPair = await window.crypto.subtle.generateKey(
+        { name: 'ECDH', namedCurve: ECDH_CURVE },
+        false,
+        ['deriveKey', 'deriveBits']
+      );
+      return { publicKey: keyPair.publicKey, privateKey: keyPair.privateKey };
+    }
+
+    async function exportPublicKey(publicKey) {
+      const jwk = await window.crypto.subtle.exportKey('jwk', publicKey);
+      return JSON.stringify(jwk);
+    }
+
+    async function importPublicKey(jwkString) {
+      const jwk = JSON.parse(jwkString);
+      return window.crypto.subtle.importKey(
+        'jwk', jwk,
+        { name: 'ECDH', namedCurve: ECDH_CURVE },
+        true, []
+      );
+    }
+
+    async function deriveSharedKey(privateKey, publicKey, salt) {
+      const sharedBits = await window.crypto.subtle.deriveBits(
+        { name: 'ECDH', public: publicKey },
+        privateKey,
+        256
+      );
+      const hkdfKey = await window.crypto.subtle.importKey(
+        'raw', sharedBits, 'HKDF', false, ['deriveKey']
+      );
+      return window.crypto.subtle.deriveKey(
+        { name: 'HKDF', hash: 'SHA-256', salt: salt, info: HKDF_INFO },
+        hkdfKey,
+        { name: AES_ALGORITHM, length: AES_KEY_LENGTH },
+        false, ['encrypt', 'decrypt']
+      );
+    }
+
+    async function encryptFile(data, privateKey, publicKey) {
+      const iv = window.crypto.getRandomValues(new Uint8Array(IV_LENGTH));
+      const salt = window.crypto.getRandomValues(new Uint8Array(SALT_LENGTH));
+      const aesKey = await deriveSharedKey(privateKey, publicKey, salt);
+      const ciphertext = await window.crypto.subtle.encrypt(
+        { name: AES_ALGORITHM, iv }, aesKey, data
+      );
+      return { ciphertext, iv, salt };
+    }
+
+    async function decryptFile(ciphertext, iv, salt, privateKey, publicKey) {
+      const aesKey = await deriveSharedKey(privateKey, publicKey, salt);
+      return window.crypto.subtle.decrypt(
+        { name: AES_ALGORITHM, iv: iv }, aesKey, ciphertext
+      );
+    }
+
+    function arrayBufferToBase64(buffer) {
+      const bytes = new Uint8Array(buffer);
+      let binary = '';
+      for (let i = 0; i < bytes.byteLength; i++) {
+        binary += String.fromCharCode(bytes[i]);
+      }
+      return window.btoa(binary);
+    }
+
+    function base64ToArrayBuffer(base64) {
+      const binary = window.atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+      return bytes.buffer;
+    }
+
+    function base64ToUint8Array(base64) {
+      return new Uint8Array(base64ToArrayBuffer(base64));
+    }
+
+    async function encryptFileForUpload(file, privateKey, recipientPublicKey) {
+      const data = await file.arrayBuffer();
+      const { ciphertext, iv, salt } = await encryptFile(data, privateKey, recipientPublicKey);
+      return {
+        ciphertext_b64: arrayBufferToBase64(ciphertext),
+        iv_b64: arrayBufferToBase64(iv.buffer),
+        salt_b64: arrayBufferToBase64(salt.buffer),
+      };
+    }
+
+    async function decryptDownloadedFile(payload, privateKey, senderPublicKey, mimeType = 'application/pdf') {
+      const ciphertext = base64ToArrayBuffer(payload.ciphertext_b64);
+      const iv = base64ToUint8Array(payload.iv_b64);
+      const salt = base64ToUint8Array(payload.salt_b64);
+      const plaintext = await decryptFile(ciphertext, iv, salt, privateKey, senderPublicKey);
+      return new Blob([plaintext], { type: mimeType });
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════
+    // TEST FRAMEWORK
+    // ══════════════════════════════════════════════════════════════════════════════
+
+    const resultsDiv = document.getElementById('results');
+    const summaryDiv = document.getElementById('summary');
+    let passed = 0, failed = 0;
+
+    function clearResults() {
+      resultsDiv.innerHTML = '';
+      summaryDiv.innerHTML = '';
+      passed = 0;
+      failed = 0;
+    }
+
+    function addResult(name, status, detail = '') {
+      const icon = status === 'pass' ? '✅' : status === 'fail' ? '❌' : '<span class="spinner"></span>';
+      const el = document.createElement('div');
+      el.className = `test-result ${status}`;
+      el.id = `test-${name.replace(/\s/g, '-')}`;
+      el.innerHTML = `
+        <span class="icon">${icon}</span>
+        <span class="name">${name}</span>
+        <span class="detail">${detail}</span>
+      `;
+      resultsDiv.appendChild(el);
+      return el;
+    }
+
+    function updateResult(el, status, detail = '') {
+      const icon = status === 'pass' ? '✅' : '❌';
+      el.className = `test-result ${status}`;
+      el.querySelector('.icon').innerHTML = icon;
+      if (detail) el.querySelector('.detail').textContent = detail;
+    }
+
+    function showSummary() {
+      const total = passed + failed;
+      summaryDiv.innerHTML = `
+        <div class="summary">
+          <div class="stat total">📊 Total: ${total}</div>
+          <div class="stat pass">✅ Trecute: ${passed}</div>
+          <div class="stat fail">❌ Eșuate: ${failed}</div>
+        </div>
+      `;
+    }
+
+    async function runTest(name, fn) {
+      const el = addResult(name, 'running', 'Se execută...');
+      try {
+        const detail = await fn();
+        updateResult(el, 'pass', detail || 'OK');
+        passed++;
+      } catch (err) {
+        updateResult(el, 'fail', err.message || String(err));
+        failed++;
+        console.error(`[FAIL] ${name}:`, err);
+      }
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════════
+    // TESTS
+    // ══════════════════════════════════════════════════════════════════════════════
+
+    async function runAllTests() {
+      clearResults();
+
+      // ── Test 1: Key Pair Generation ─────────────────────────────────────
+      await runTest('1. Generare pereche de chei ECDH P-256', async () => {
+        const kp = await generateKeyPair();
+        if (!kp.publicKey || !kp.privateKey) throw new Error('Cheile nu au fost generate');
+        if (kp.publicKey.type !== 'public') throw new Error(`Tip cheie publică incorect: ${kp.publicKey.type}`);
+        if (kp.privateKey.type !== 'private') throw new Error(`Tip cheie privată incorect: ${kp.privateKey.type}`);
+        if (kp.publicKey.algorithm.name !== 'ECDH') throw new Error(`Algoritm incorect: ${kp.publicKey.algorithm.name}`);
+        if (kp.privateKey.extractable !== false) throw new Error('Cheia privată NU ar trebui să fie extractabilă!');
+        return `publicKey: ${kp.publicKey.algorithm.name}/${kp.publicKey.algorithm.namedCurve}, extractable=${kp.publicKey.extractable}`;
+      });
+
+      // ── Test 2: Public Key Export to JWK ───────────────────────────────
+      await runTest('2. Export cheie publică → JWK', async () => {
+        const kp = await generateKeyPair();
+        const jwk = await exportPublicKey(kp.publicKey);
+        const parsed = JSON.parse(jwk);
+        if (parsed.kty !== 'EC') throw new Error(`kty incorect: ${parsed.kty}`);
+        if (parsed.crv !== 'P-256') throw new Error(`crv incorect: ${parsed.crv}`);
+        if (!parsed.x || !parsed.y) throw new Error('Lipsesc coordonatele x/y');
+        if (parsed.d) throw new Error('CRITIC: Cheia privată (d) a fost exportată! Aceasta este o breșă de securitate!');
+        return `JWK valid: kty=${parsed.kty}, crv=${parsed.crv}, fără cheie privată (d)`;
+      });
+
+      // ── Test 3: Public Key Import from JWK ─────────────────────────────
+      await runTest('3. Import cheie publică din JWK', async () => {
+        const kp = await generateKeyPair();
+        const jwk = await exportPublicKey(kp.publicKey);
+        const imported = await importPublicKey(jwk);
+        if (imported.type !== 'public') throw new Error(`Tipul importat este greșit: ${imported.type}`);
+        if (imported.algorithm.name !== 'ECDH') throw new Error('Algoritm incorect după import');
+        if (imported.algorithm.namedCurve !== 'P-256') throw new Error('Curbă incorectă după import');
+        return `Import reușit: ${imported.algorithm.name}/${imported.algorithm.namedCurve}`;
+      });
+
+      // ── Test 4: JWK Round-Trip Integrity ───────────────────────────────
+      await runTest('4. Integritate round-trip JWK (export → import → re-export)', async () => {
+        const kp = await generateKeyPair();
+        const jwk1 = await exportPublicKey(kp.publicKey);
+        const imported = await importPublicKey(jwk1);
+        const jwk2 = await exportPublicKey(imported);
+        const parsed1 = JSON.parse(jwk1);
+        const parsed2 = JSON.parse(jwk2);
+        if (parsed1.x !== parsed2.x) throw new Error('Coordonata x diferă după round-trip!');
+        if (parsed1.y !== parsed2.y) throw new Error('Coordonata y diferă după round-trip!');
+        return 'Coordonatele x,y sunt identice după export → import → re-export';
+      });
+
+      // ── Test 5: ECDH Key Agreement (Shared Secret Symmetry) ────────────
+      await runTest('5. Acord de cheie ECDH — simetrie secretului partajat', async () => {
+        const alice = await generateKeyPair();
+        const bob = await generateKeyPair();
+        const salt = window.crypto.getRandomValues(new Uint8Array(SALT_LENGTH));
+
+        // Alice derives with her private + Bob's public
+        const aliceKey = await deriveSharedKey(alice.privateKey, bob.publicKey, salt);
+        // Bob derives with his private + Alice's public
+        const bobKey = await deriveSharedKey(bob.privateKey, alice.publicKey, salt);
+
+        // Encrypt with Alice's key, decrypt with Bob's key
+        const testData = new TextEncoder().encode('Test ECDH symmetry');
+        const iv = window.crypto.getRandomValues(new Uint8Array(IV_LENGTH));
+
+        const encrypted = await window.crypto.subtle.encrypt(
+          { name: AES_ALGORITHM, iv }, aliceKey, testData
+        );
+        const decrypted = await window.crypto.subtle.decrypt(
+          { name: AES_ALGORITHM, iv }, bobKey, encrypted
+        );
+        const result = new TextDecoder().decode(decrypted);
+        if (result !== 'Test ECDH symmetry') throw new Error(`Decriptare eșuată: "${result}"`);
+        return 'Alice(priv) + Bob(pub) = Bob(priv) + Alice(pub) → decriptare reușită';
+      });
+
+      // ── Test 6: File Encrypt + Decrypt (Small text) ─────────────────────
+      await runTest('6. Criptare + decriptare fișier mic (text)', async () => {
+        const alice = await generateKeyPair();
+        const bob = await generateKeyPair();
+        const original = 'Acesta este un fișier medical confidențial. Pacient: Test User.';
+        const data = new TextEncoder().encode(original).buffer;
+
+        const encrypted = await encryptFile(data, alice.privateKey, bob.publicKey);
+        if (encrypted.iv.length !== IV_LENGTH) throw new Error(`IV size: ${encrypted.iv.length}`);
+        if (encrypted.salt.length !== SALT_LENGTH) throw new Error(`Salt size: ${encrypted.salt.length}`);
+
+        const decrypted = await decryptFile(
+          encrypted.ciphertext, encrypted.iv, encrypted.salt,
+          bob.privateKey, alice.publicKey
+        );
+        const result = new TextDecoder().decode(decrypted);
+        if (result !== original) throw new Error(`Text decriptat diferit: "${result}"`);
+        return `${original.length} bytes text → criptat (${encrypted.ciphertext.byteLength} bytes) → decriptat identic`;
+      });
+
+      // ── Test 7: File Encrypt + Decrypt (Binary / Large) ────────────────
+      await runTest('7. Criptare + decriptare date binare mari (1MB)', async () => {
+        const alice = await generateKeyPair();
+        const bob = await generateKeyPair();
+
+        // Create 1MB of random binary data (in 64KB chunks — getRandomValues has a 65536-byte limit)
+        const size = 1024 * 1024;
+        const original = new Uint8Array(size);
+        for (let off = 0; off < size; off += 65536) {
+          const chunk = Math.min(65536, size - off);
+          window.crypto.getRandomValues(original.subarray(off, off + chunk));
+        }
+
+        const encrypted = await encryptFile(original.buffer, alice.privateKey, bob.publicKey);
+        const decrypted = await decryptFile(
+          encrypted.ciphertext, encrypted.iv, encrypted.salt,
+          bob.privateKey, alice.publicKey
+        );
+
+        const decryptedArr = new Uint8Array(decrypted);
+        if (decryptedArr.length !== original.length) {
+          throw new Error(`Dimensiune diferită: ${decryptedArr.length} vs ${original.length}`);
+        }
+        // Compare first 1000 and last 1000 bytes
+        for (let i = 0; i < 1000; i++) {
+          if (decryptedArr[i] !== original[i]) throw new Error(`Byte diferit la poziția ${i}`);
+        }
+        for (let i = size - 1000; i < size; i++) {
+          if (decryptedArr[i] !== original[i]) throw new Error(`Byte diferit la poziția ${i}`);
+        }
+        return `1MB (${size} bytes) → criptat (${encrypted.ciphertext.byteLength} bytes) → decriptat identic`;
+      });
+
+      // ── Test 8: Base64 Round-Trip ──────────────────────────────────────
+      await runTest('8. Utilități Base64 — round-trip integritate', async () => {
+        const testCases = [
+          new Uint8Array([]),
+          new Uint8Array([0]),
+          new Uint8Array([0, 1, 2, 3, 255]),
+          window.crypto.getRandomValues(new Uint8Array(100)),
+          window.crypto.getRandomValues(new Uint8Array(1000)),
+        ];
+        for (let i = 0; i < testCases.length; i++) {
+          const original = testCases[i];
+          const b64 = arrayBufferToBase64(original.buffer);
+          const restored = new Uint8Array(base64ToArrayBuffer(b64));
+          if (restored.length !== original.length) {
+            throw new Error(`Caz ${i}: dimensiune diferită (${restored.length} vs ${original.length})`);
+          }
+          for (let j = 0; j < original.length; j++) {
+            if (restored[j] !== original[j]) {
+              throw new Error(`Caz ${i}: byte diferit la poziția ${j}`);
+            }
+          }
+        }
+        return `${testCases.length} cazuri (gol, 1B, 5B, 100B, 1000B) — toate identice după round-trip`;
+      });
+
+      // ── Test 9: Full Upload/Download Flow (Base64 serialization) ───────
+      await runTest('9. Flux complet upload/download cu serializare Base64', async () => {
+        const doctor = await generateKeyPair();
+        const patient = await generateKeyPair();
+        const content = 'PDF medical confidential - diagnostic: sănătos, tratament: odihnă';
+        const blob = new Blob([content], { type: 'application/pdf' });
+        const file = new File([blob], 'medical_report.pdf', { type: 'application/pdf' });
+
+        // Doctor encrypts for patient
+        const payload = await encryptFileForUpload(file, doctor.privateKey, patient.publicKey);
+        if (!payload.ciphertext_b64 || !payload.iv_b64 || !payload.salt_b64) {
+          throw new Error('Payload incomplet');
+        }
+
+        // Simulate: payload is sent to server as JSON, then downloaded by patient
+
+        // Patient decrypts
+        const decryptedBlob = await decryptDownloadedFile(
+          payload, patient.privateKey, doctor.publicKey, 'application/pdf'
+        );
+        const decryptedText = await decryptedBlob.text();
+        if (decryptedText !== content) throw new Error(`Conținut diferit: "${decryptedText}"`);
+        if (decryptedBlob.type !== 'application/pdf') throw new Error(`MIME type incorect: ${decryptedBlob.type}`);
+        return `File → encrypt → base64 → transmit → base64 → decrypt → File identic (${content.length} bytes)`;
+      });
+
+      // ── Test 10: Wrong Key → Decryption Fails ─────────────────────────
+      await runTest('10. Cheie greșită → decriptarea TREBUIE să eșueze', async () => {
+        const alice = await generateKeyPair();
+        const bob = await generateKeyPair();
+        const eve = await generateKeyPair(); // attacker
+        const data = new TextEncoder().encode('Date secrete').buffer;
+
+        const encrypted = await encryptFile(data, alice.privateKey, bob.publicKey);
+
+        // Eve tries to decrypt with her key + Alice's public
+        try {
+          await decryptFile(
+            encrypted.ciphertext, encrypted.iv, encrypted.salt,
+            eve.privateKey, alice.publicKey
+          );
+          throw new Error('CRITIC: Decriptarea a reușit cu cheia unui atacator!');
+        } catch (err) {
+          if (err.message.includes('CRITIC')) throw err;
+          // Expected: OperationError from AES-GCM authentication tag failure
+          return `Corect: decriptarea cu cheie greșită aruncă eroare: ${err.name || err.message}`;
+        }
+      });
+
+      // ── Test 11: Tampered Ciphertext → Decryption Fails ───────────────
+      await runTest('11. Date alterate → decriptarea TREBUIE să eșueze (AES-GCM auth)', async () => {
+        const alice = await generateKeyPair();
+        const bob = await generateKeyPair();
+        const data = new TextEncoder().encode('Date care nu trebuie alterate').buffer;
+
+        const encrypted = await encryptFile(data, alice.privateKey, bob.publicKey);
+
+        // Tamper with the ciphertext (flip a byte)
+        const tampered = new Uint8Array(encrypted.ciphertext);
+        tampered[0] ^= 0xFF;
+
+        try {
+          await decryptFile(
+            tampered.buffer, encrypted.iv, encrypted.salt,
+            bob.privateKey, alice.publicKey
+          );
+          throw new Error('CRITIC: Decriptarea a reușit cu date alterate! AES-GCM nu funcționează!');
+        } catch (err) {
+          if (err.message.includes('CRITIC')) throw err;
+          return `Corect: AES-GCM detectează alterarea: ${err.name || err.message}`;
+        }
+      });
+
+      // ── Test 12: Tampered IV → Decryption Fails ───────────────────────
+      await runTest('12. IV alterat → decriptarea TREBUIE să eșueze', async () => {
+        const alice = await generateKeyPair();
+        const bob = await generateKeyPair();
+        const data = new TextEncoder().encode('Test IV integrity').buffer;
+
+        const encrypted = await encryptFile(data, alice.privateKey, bob.publicKey);
+
+        // Tamper with IV
+        const badIv = new Uint8Array(encrypted.iv);
+        badIv[0] ^= 0xFF;
+
+        try {
+          await decryptFile(
+            encrypted.ciphertext, badIv, encrypted.salt,
+            bob.privateKey, alice.publicKey
+          );
+          throw new Error('CRITIC: Decriptarea a reușit cu IV alterat!');
+        } catch (err) {
+          if (err.message.includes('CRITIC')) throw err;
+          return `Corect: IV alterat → eroare: ${err.name || err.message}`;
+        }
+      });
+
+      // ── Test 13: Tampered Salt → Decryption Fails ─────────────────────
+      await runTest('13. Salt alterat → cheia derivată diferă → decriptare eșuată', async () => {
+        const alice = await generateKeyPair();
+        const bob = await generateKeyPair();
+        const data = new TextEncoder().encode('Test salt integrity').buffer;
+
+        const encrypted = await encryptFile(data, alice.privateKey, bob.publicKey);
+
+        // Tamper with salt → derives a different AES key
+        const badSalt = new Uint8Array(encrypted.salt);
+        badSalt[0] ^= 0xFF;
+
+        try {
+          await decryptFile(
+            encrypted.ciphertext, encrypted.iv, badSalt,
+            bob.privateKey, alice.publicKey
+          );
+          throw new Error('CRITIC: Decriptarea a reușit cu salt alterat!');
+        } catch (err) {
+          if (err.message.includes('CRITIC')) throw err;
+          return `Corect: salt alterat → cheie AES diferită → eroare: ${err.name || err.message}`;
+        }
+      });
+
+      // ── Test 14: JWK Validation (no private key leaked) ───────────────
+      await runTest('14. Validare JWK server-side: cheia privată NU este inclusă', async () => {
+        const kp = await generateKeyPair();
+        const jwk = await exportPublicKey(kp.publicKey);
+        const parsed = JSON.parse(jwk);
+
+        // Simulate server-side validation (same as e2ee_router.py)
+        if (parsed.kty !== 'EC') throw new Error('Serverul ar respinge: kty != EC');
+        if (parsed.crv !== 'P-256') throw new Error('Serverul ar respinge: crv != P-256');
+        if ('d' in parsed) throw new Error('CRITIC: Cheia privată "d" este prezentă în JWK!');
+
+        return 'JWK conține doar cheie publică (x, y) — validare server-side OK';
+      });
+
+      // ── Test 15: Different salt → different ciphertext ─────────────────
+      await runTest('15. Salt diferit → ciphertext diferit (nondeterminism corect)', async () => {
+        const alice = await generateKeyPair();
+        const bob = await generateKeyPair();
+        const data = new TextEncoder().encode('Same plaintext').buffer;
+
+        const enc1 = await encryptFile(data, alice.privateKey, bob.publicKey);
+        const enc2 = await encryptFile(data, alice.privateKey, bob.publicKey);
+
+        const ct1 = arrayBufferToBase64(enc1.ciphertext);
+        const ct2 = arrayBufferToBase64(enc2.ciphertext);
+
+        if (ct1 === ct2) throw new Error('ATENȚIE: Același plaintext produce același ciphertext! IV/salt nu funcționează corect.');
+
+        // Both should still decrypt correctly
+        const dec1 = new TextDecoder().decode(
+          await decryptFile(enc1.ciphertext, enc1.iv, enc1.salt, bob.privateKey, alice.publicKey)
+        );
+        const dec2 = new TextDecoder().decode(
+          await decryptFile(enc2.ciphertext, enc2.iv, enc2.salt, bob.privateKey, alice.publicKey)
+        );
+        if (dec1 !== 'Same plaintext' || dec2 !== 'Same plaintext') {
+          throw new Error('Decriptarea eșuează pentru una din variante');
+        }
+        return 'Același text → 2 ciphertext-uri diferite → ambele se decriptează corect';
+      });
+
+      // ── Test 16: Bidirectional communication ──────────────────────────
+      await runTest('16. Comunicare bidirecțională Doctor ↔ Pacient', async () => {
+        const doctor = await generateKeyPair();
+        const patient = await generateKeyPair();
+
+        // Doctor sends to Patient
+        const msgToPatient = new TextEncoder().encode('Diagnostic: sănătos').buffer;
+        const enc1 = await encryptFile(msgToPatient, doctor.privateKey, patient.publicKey);
+        const dec1 = new TextDecoder().decode(
+          await decryptFile(enc1.ciphertext, enc1.iv, enc1.salt, patient.privateKey, doctor.publicKey)
+        );
+
+        // Patient sends to Doctor
+        const msgToDoctor = new TextEncoder().encode('Mulțumesc, doctore!').buffer;
+        const enc2 = await encryptFile(msgToDoctor, patient.privateKey, doctor.publicKey);
+        const dec2 = new TextDecoder().decode(
+          await decryptFile(enc2.ciphertext, enc2.iv, enc2.salt, doctor.privateKey, patient.publicKey)
+        );
+
+        if (dec1 !== 'Diagnostic: sănătos') throw new Error(`Doctor→Patient eșuat: "${dec1}"`);
+        if (dec2 !== 'Mulțumesc, doctore!') throw new Error(`Patient→Doctor eșuat: "${dec2}"`);
+        return 'Doctor→Patient ✓ | Patient→Doctor ✓ — comunicare bidirecțională funcțională';
+      });
+
+      // ── Test 17: Unicode content ──────────────────────────────────────
+      await runTest('17. Conținut Unicode / diacritice / emoji', async () => {
+        const alice = await generateKeyPair();
+        const bob = await generateKeyPair();
+        const unicode = 'Șțăîâ 你好世界 🔐🏥💊 العربية';
+        const data = new TextEncoder().encode(unicode).buffer;
+
+        const encrypted = await encryptFile(data, alice.privateKey, bob.publicKey);
+        const decrypted = new TextDecoder().decode(
+          await decryptFile(encrypted.ciphertext, encrypted.iv, encrypted.salt, bob.privateKey, alice.publicKey)
+        );
+        if (decrypted !== unicode) throw new Error(`Unicode alterat: "${decrypted}"`);
+        return `"${unicode}" → criptat → decriptat identic`;
+      });
+
+      // ── Test 18: Empty payload ─────────────────────────────────────────
+      await runTest('18. Payload gol (0 bytes)', async () => {
+        const alice = await generateKeyPair();
+        const bob = await generateKeyPair();
+        const data = new ArrayBuffer(0);
+
+        const encrypted = await encryptFile(data, alice.privateKey, bob.publicKey);
+        const decrypted = await decryptFile(
+          encrypted.ciphertext, encrypted.iv, encrypted.salt,
+          bob.privateKey, alice.publicKey
+        );
+        if (decrypted.byteLength !== 0) throw new Error(`Payload gol decriptat are ${decrypted.byteLength} bytes`);
+        return 'Payload gol: criptat → decriptat → 0 bytes (corect)';
+      });
+
+      // ── Test 19: IndexedDB key persistence simulation ──────────────────
+      await runTest('19. Persistență chei IndexedDB (store → load)', async () => {
+        const DB_NAME = 'ehealth-e2ee-keys-test';
+        const DB_VERSION = 1;
+        const STORE_NAME = 'keypairs';
+        const testUserId = 99999;
+
+        // Open test DB
+        const db = await new Promise((resolve, reject) => {
+          const req = indexedDB.open(DB_NAME, DB_VERSION);
+          req.onupgradeneeded = () => {
+            const db = req.result;
+            if (!db.objectStoreNames.contains(STORE_NAME)) {
+              db.createObjectStore(STORE_NAME, { keyPath: 'userId' });
+            }
+          };
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+        });
+
+        // Generate and store
+        const kp = await generateKeyPair();
+        await new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_NAME, 'readwrite');
+          tx.objectStore(STORE_NAME).put({
+            userId: testUserId,
+            publicKey: kp.publicKey,
+            privateKey: kp.privateKey,
+          });
+          tx.oncomplete = () => resolve();
+          tx.onerror = () => reject(tx.error);
+        });
+
+        // Load
+        const loaded = await new Promise((resolve, reject) => {
+          const tx = db.transaction(STORE_NAME, 'readonly');
+          const req = tx.objectStore(STORE_NAME).get(testUserId);
+          req.onsuccess = () => resolve(req.result);
+          req.onerror = () => reject(req.error);
+        });
+
+        if (!loaded) throw new Error('Cheia nu a fost găsită în IndexedDB');
+        if (!loaded.publicKey || !loaded.privateKey) throw new Error('Cheile recuperate sunt incomplete');
+
+        // Verify the loaded keys work for encryption
+        const data = new TextEncoder().encode('IndexedDB test').buffer;
+        const kp2 = await generateKeyPair();
+        const encrypted = await encryptFile(data, loaded.privateKey, kp2.publicKey);
+        const decrypted = new TextDecoder().decode(
+          await decryptFile(encrypted.ciphertext, encrypted.iv, encrypted.salt, kp2.privateKey, loaded.publicKey)
+        );
+        if (decrypted !== 'IndexedDB test') throw new Error(`Decriptare cu chei din IDB eșuată: "${decrypted}"`);
+
+        // Cleanup
+        await new Promise((resolve) => {
+          const tx = db.transaction(STORE_NAME, 'readwrite');
+          tx.objectStore(STORE_NAME).delete(testUserId);
+          tx.oncomplete = () => resolve();
+        });
+        db.close();
+        indexedDB.deleteDatabase(DB_NAME);
+
+        return 'Store → Load → Encrypt/Decrypt funcțional — cheile persistă corect în IndexedDB';
+      });
+
+      // ── Test 20: Performance benchmark ─────────────────────────────────
+      await runTest('20. Benchmark performanță (100 operații encrypt/decrypt)', async () => {
+        const alice = await generateKeyPair();
+        const bob = await generateKeyPair();
+        const data = window.crypto.getRandomValues(new Uint8Array(10 * 1024)).buffer; // 10KB
+
+        const start = performance.now();
+        for (let i = 0; i < 100; i++) {
+          const enc = await encryptFile(data, alice.privateKey, bob.publicKey);
+          await decryptFile(enc.ciphertext, enc.iv, enc.salt, bob.privateKey, alice.publicKey);
+        }
+        const elapsed = performance.now() - start;
+        const perOp = (elapsed / 100).toFixed(1);
+
+        if (elapsed > 60000) throw new Error(`Prea lent: ${elapsed.toFixed(0)}ms pentru 100 operații`);
+        return `100 × (encrypt 10KB + decrypt) = ${elapsed.toFixed(0)}ms total, ${perOp}ms/operație`;
+      });
+
+      showSummary();
+    }
+  </script>
+</body>
+</html>
